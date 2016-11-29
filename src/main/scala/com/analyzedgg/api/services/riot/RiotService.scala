@@ -1,22 +1,23 @@
 package com.analyzedgg.api.services.riot
 
-import akka.actor.Status.Failure
-import akka.actor.{Actor, ActorLogging, ActorRef}
+import java.util.concurrent.Executors
+
+import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.client.RequestBuilding
-import akka.http.scaladsl.model.StatusCodes._
-import akka.http.scaladsl.model._
-import akka.http.scaladsl.model.{HttpRequest, HttpResponse}
+import akka.http.scaladsl.model.{HttpRequest, HttpResponse, _}
 import akka.http.scaladsl.unmarshalling.Unmarshal
-import akka.stream.{ActorMaterializer, Materializer}
 import akka.stream.scaladsl.{Flow, Sink, Source}
+import akka.stream.{ActorMaterializer, Materializer}
+import com.analyzedgg.api.domain.riot.{RiotSummoner, RiotSummonerDeserializer}
 import com.fasterxml.jackson.databind.module.SimpleModule
 import com.fasterxml.jackson.databind.{DeserializationFeature, ObjectMapper}
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.fasterxml.jackson.module.scala.experimental.ScalaObjectMapper
-import com.analyzedgg.api.domain.riot.{RiotSummoner, RiotSummonerDeserializer}
+import com.typesafe.config.ConfigFactory
+import com.typesafe.scalalogging.LazyLogging
 
-import scala.concurrent.{ExecutionContextExecutor, Future}
+import scala.concurrent.{ExecutionContext, Future}
 
 object RiotService {
 
@@ -26,9 +27,7 @@ object RiotService {
 
 }
 
-trait RiotService {
-  this: Actor with ActorLogging =>
-
+trait RiotService extends LazyLogging {
   val objectMapper = new ObjectMapper with ScalaObjectMapper
   objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
   objectMapper.registerModule(DefaultScalaModule)
@@ -37,10 +36,11 @@ trait RiotService {
   riotChampionModule.addDeserializer(classOf[RiotSummoner], new RiotSummonerDeserializer())
   objectMapper.registerModule(riotChampionModule)
 
-  private val config = context.system.settings.config
+  private val config = ConfigFactory.load()
 
-  implicit def executor: ExecutionContextExecutor = context.system.dispatcher
-
+  val executorService = Executors.newCachedThreadPool()
+  implicit val executionContext = ExecutionContext.fromExecutorService(executorService)
+  implicit val system = ActorSystem("service")
   implicit val materializer: Materializer = ActorMaterializer()
 
   private val port: Int = config.getInt("riot.api.port")
@@ -50,12 +50,13 @@ trait RiotService {
     val hostname: String = config.getString(s"riot.api.hostname.$hostType")
     val host = hostname.replace(":region", region)
 
-    log.debug(s"endpoint host: $host")
+    logger.debug(s"endpoint host: $host")
+
 
     if (config.getBoolean("riot.api.tls")) {
-      Http(context.system).outgoingConnectionTls(host, port)
+      Http(system).outgoingConnectionHttps(host, port)
     } else {
-      Http(context.system).outgoingConnection(host, port)
+      Http(system).outgoingConnection(host, port)
     }
   }
 
@@ -63,13 +64,13 @@ trait RiotService {
                                prefix: String = "api/lol", hostType: String = "api"): Future[HttpResponse] = {
     val queryString = (queryParams + ("api_key" -> api_key)).collect { case x => x._1 + "=" + x._2 }.mkString("&")
     val URL = s"/$prefix/$regionParam/$serviceParam?$queryString"
-    log.debug(s"endpoint: $URL")
+    logger.debug(s"endpoint: $URL")
     Source.single(RequestBuilding.Get(URL)).via(riotConnectionFlow(regionParam, serviceParam, hostType)).runWith(Sink.head)
   }
 
   protected def mapRiotTo[R](response: ResponseEntity, responseClass: Class[R]): Future[R] = {
     Unmarshal(response).to[String].map { mappedResult =>
-      log.debug(s"Got json string $mappedResult")
+      logger.debug(s"Got json string $mappedResult")
       objectMapper.readValue[R](mappedResult, responseClass)
     }
   }

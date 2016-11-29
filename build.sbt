@@ -12,29 +12,27 @@ resolvers += "Typesafe Repository" at "http://repo.typesafe.com/typesafe/release
 resolvers += "Mvn repository" at "http://mvnrepository.com/artifact/"
 
 libraryDependencies ++= {
-  val akkaVersion = "2.3.10"
+  val akkaVersion = "2.4.11"
   val akkaStreamVersion = "1.0"
   val scalaTestVersion = "2.2.1"
   val logbackVersion = "1.1.2"
   val jacksonVersion: String = "2.7.4"
   val couchDbScalaVersion: String = "0.7.0"
+  val scalaLoggingVersion: String = "3.5.0"
 
   Seq(
     "com.typesafe.akka" %% "akka-actor" % akkaVersion,
     "com.typesafe.akka" %% "akka-remote" % akkaVersion,
     "com.typesafe.akka" %% "akka-slf4j" % akkaVersion,
-    "com.typesafe.akka" %% "akka-stream-experimental" % akkaStreamVersion,
-    "com.typesafe.akka" %% "akka-http-core-experimental" % akkaStreamVersion,
-    "com.typesafe.akka" %% "akka-http-experimental" % akkaStreamVersion,
-    "com.typesafe.akka" %% "akka-http-spray-json-experimental" % akkaStreamVersion,
-    "ch.qos.logback"    % "logback-classic" % logbackVersion % "runtime",
+    "com.typesafe.akka" %% "akka-http-spray-json-experimental" % akkaVersion,
+    "ch.qos.logback" % "logback-classic" % logbackVersion % "runtime",
+    "com.typesafe.scala-logging" %% "scala-logging" % scalaLoggingVersion,
     "com.typesafe.akka" % "akka-testkit_2.11" % akkaVersion % "test,it",
-    "com.typesafe.akka" %% "akka-http-testkit-experimental" % akkaStreamVersion % "test,it",
-    "org.scalatest"     %% "scalatest" % scalaTestVersion % "test,it",
+    "org.scalatest" %% "scalatest" % scalaTestVersion % "test,it",
     "com.fasterxml.jackson.core" % "jackson-core" % jacksonVersion,
     "com.fasterxml.jackson.core" % "jackson-databind" % jacksonVersion,
     "com.fasterxml.jackson.module" % "jackson-module-scala_2.11" % jacksonVersion,
-    "com.ibm"           %% "couchdb-scala" % couchDbScalaVersion
+    "com.ibm" %% "couchdb-scala" % couchDbScalaVersion
   )
 }
 
@@ -52,6 +50,6 @@ deployTask <<= assembly map { (asm) =>
   s"ssh $account cd league && ./run.sh".!
 }
 
-mainClass in (Compile,run) := Some("com.analyzedgg.api.Startup")
+mainClass in(Compile, run) := Some("com.analyzedgg.api.Startup")
 
 fork in run := true
