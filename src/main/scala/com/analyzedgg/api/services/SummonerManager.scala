@@ -4,17 +4,24 @@ import java.util.concurrent.Executors
 
 import akka.actor.ActorSystem
 import akka.stream.scaladsl.{Flow, GraphDSL, RunnableGraph, Sink, Source}
-import akka.stream.{ActorMaterializer, ClosedShape}
+import akka.stream.{ActorMaterializer, ActorMaterializerSettings, ClosedShape, Supervision}
 import com.analyzedgg.api.domain.Summoner
 import com.analyzedgg.api.services.riot.SummonerService
+import com.typesafe.scalalogging.LazyLogging
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}
 
-object SummonerManager {
+object SummonerManager extends LazyLogging{
   private val service = SummonerService()
   implicit val executionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
-  implicit val materializer = ActorMaterializer()(ActorSystem("summoner"))
+  val system = ActorSystem("system")
+  val decider: Supervision.Decider = { e =>
+    Supervision.Stop
+    throw e
+  }
+  val materializerSettings = ActorMaterializerSettings(system).withSupervisionStrategy(decider)
+  implicit val materializer = ActorMaterializer(materializerSettings)(system)
 
   case class GetSummoner(region: String, name: String)
 
@@ -28,15 +35,18 @@ object SummonerManager {
   }
 
   private def createGraph(summoner: GetSummoner) = {
-    val out = Sink.head[Summoner]
-    RunnableGraph.fromGraph(GraphDSL.create(out) { implicit builder => out =>
+    val sink = Sink.head[Summoner]
+    RunnableGraph.fromGraph(GraphDSL.create(sink) { implicit builder => sink =>
       // Import the implicits so the ~> syntax can be used
       import GraphDSL.Implicits._
-      val in = Source.single[GetSummoner](summoner)
-      val flow = Flow[GetSummoner].map(retrieveFromRiot)
+      val source = Source.single[GetSummoner](summoner)
+      val fromRiotFlow = Flow[GetSummoner].map(retrieveFromRiot)
 
       // Chain the Stream components together
-      in ~> flow ~> out
+      // source: Start of stream, sends the passed GetSummoner object downstream
+      // fromRiotFlow: Uses the GetSummoner object to retrieve the summoner from the Riot API
+      // sink: End fo stream, returns the summoner
+      source ~> fromRiotFlow ~> sink
 
       ClosedShape
     })
