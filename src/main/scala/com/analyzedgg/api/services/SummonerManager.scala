@@ -18,7 +18,7 @@ object SummonerManager extends LazyLogging {
 }
 
 class SummonerManager {
-  private val service = SummonerService()
+  private val service = createSummonerService()
   implicit val executionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
   val system = ActorSystem("system")
   val decider: Supervision.Decider = { e =>
@@ -54,6 +54,8 @@ class SummonerManager {
       ClosedShape
     })
   }
+
+  protected def createSummonerService(): SummonerService = SummonerService()
 }
 
 
