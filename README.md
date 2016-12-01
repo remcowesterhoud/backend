@@ -1,3 +1,6 @@
+[![Build Status](https://travis-ci.org/remcowesterhoud/backend.svg?branch=master)](https://travis-ci.org/remcowesterhoud/backend)
+[![Coverage Status](https://coveralls.io/repos/github/remcowesterhoud/backend/badge.svg?branch=master)](https://coveralls.io/github/remcowesterhoud/backend?branch=master)
+
 # League API
 This is the backend for the League API project.
 
