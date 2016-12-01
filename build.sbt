@@ -13,8 +13,8 @@ resolvers += "Mvn repository" at "http://mvnrepository.com/artifact/"
 
 libraryDependencies ++= {
   val akkaVersion = "2.4.11"
-  val akkaStreamVersion = "1.0"
-  val scalaTestVersion = "2.2.1"
+  val scalaTestVersion = "3.0.1"
+  val scalaMockVersion = "3.2.2"
   val logbackVersion = "1.1.2"
   val jacksonVersion: String = "2.7.4"
   val couchDbScalaVersion: String = "0.7.0"
@@ -28,7 +28,9 @@ libraryDependencies ++= {
     "ch.qos.logback" % "logback-classic" % logbackVersion % "runtime",
     "com.typesafe.scala-logging" %% "scala-logging" % scalaLoggingVersion,
     "com.typesafe.akka" % "akka-testkit_2.11" % akkaVersion % "test,it",
+    "com.typesafe.akka" % "akka-http-testkit_2.11" % akkaVersion,
     "org.scalatest" %% "scalatest" % scalaTestVersion % "test,it",
+    "org.scalamock" %% "scalamock-scalatest-support" % scalaMockVersion % "test",
     "com.fasterxml.jackson.core" % "jackson-core" % jacksonVersion,
     "com.fasterxml.jackson.core" % "jackson-databind" % jacksonVersion,
     "com.fasterxml.jackson.module" % "jackson-module-scala_2.11" % jacksonVersion,

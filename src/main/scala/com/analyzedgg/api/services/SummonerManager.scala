@@ -6,13 +6,18 @@ import akka.actor.ActorSystem
 import akka.stream.scaladsl.{Flow, GraphDSL, RunnableGraph, Sink, Source}
 import akka.stream.{ActorMaterializer, ActorMaterializerSettings, ClosedShape, Supervision}
 import com.analyzedgg.api.domain.Summoner
+import com.analyzedgg.api.services.SummonerManager.GetSummoner
 import com.analyzedgg.api.services.riot.SummonerService
 import com.typesafe.scalalogging.LazyLogging
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}
 
-object SummonerManager extends LazyLogging{
+object SummonerManager extends LazyLogging {
+  case class GetSummoner(region: String, name: String)
+}
+
+class SummonerManager {
   private val service = SummonerService()
   implicit val executionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
   val system = ActorSystem("system")
@@ -22,8 +27,6 @@ object SummonerManager extends LazyLogging{
   }
   val materializerSettings = ActorMaterializerSettings(system).withSupervisionStrategy(decider)
   implicit val materializer = ActorMaterializer(materializerSettings)(system)
-
-  case class GetSummoner(region: String, name: String)
 
   def getSummoner(region: String, name: String): Summoner = {
     val graph = createGraph(GetSummoner(region, name))
