@@ -1,8 +1,18 @@
 language: scala
 scala:
-  - 2.11.8
+- 2.11.8
 jdk:
-  - oraclejdk8
-  
-script: "sbt clean coverage test"
-after_success: "sbt coverageReport coveralls"
+- oraclejdk8
+script:
+
+addons:
+  sonarqube: true
+env:
+  global:
+    secure: oPE5wZCkuntt7dwEEk5HyAceDuny8fuZiCvZSCBT7tR+BZ+b6Ou9zcYELk/3aBwRyArSF8uN0T5VLfj/5y2Vn/U3dEGX7XruhDrlbhIzP29WUN+RE419oFLyG65+5OAwDM6+9ZidBR2XTEBSing05X0bl4N1TmsCKNqlMzA+BJA8s7cK8/48fqt+alTOFppVr4Bca1nXGNQwvP+USjfOFsUiPQ043KOzjx9KpeO0LbXgUqSrajDOMYt9HLXOra298AYYFVQwflByLw1VsRo+hM5sJf4quzQNF94973dZLhGVSY+wDEkIv1ZyICe0kMBW4wzxerpUuQ4aJfuuYzoLuPenKBWCDsDoyFZngqNSxcVPj52s8tZ+RUEvcMF5+f7lxt8S4nVfTjJOOvvOVnMcSrbWUwaWqBRFsVEwIgPfSRoXG7eQzBNYaGiDrOZTEar2hkzcSFhvikpTaQ+HByXy/sHvzVKObRRzbDBEJ7aL009k+Yks+IpWD6U2rUZ2pwZP8FuyVrymjCKWcfCZbQPcbZnA2KSe6bKsi6HUk60oftYV36HHzJJFInqTldtA107fMUSUuZspnGyjVYKsYmyCXsqFjYWvqTDjvAaIpPPQwYQrf7RBOedYLfxJPTXGPzC7c95BP6futecIGVuM2PxnD9VYZBoAniWaFQNxi9QRazA=
+
+script:
+  # other script steps might be done before running the actual SonarQube analysis
+  - sbt clean coverage scalastyle test
+  - sonar-scanner -Dsonar.login=$SONAR_TOKEN
+after_success: sbt coverageReport coveralls
