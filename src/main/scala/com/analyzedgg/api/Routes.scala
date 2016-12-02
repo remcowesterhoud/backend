@@ -7,7 +7,7 @@ import akka.http.scaladsl.model.HttpResponse
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.model.headers.RawHeader
 import akka.http.scaladsl.server.Directives._
-import akka.http.scaladsl.server.ExceptionHandler
+import akka.http.scaladsl.server.{ExceptionHandler, Route}
 import akka.pattern.{CircuitBreaker, ask}
 import akka.util.Timeout
 import com.analyzedgg.api.services.riot.ChampionService.GetChampions
@@ -17,6 +17,7 @@ import com.typesafe.config.Config
 
 import scala.concurrent.ExecutionContextExecutor
 import scala.concurrent.duration._
+import scala.util.matching.Regex
 
 trait Routes extends JsonProtocols {
   implicit val system: ActorSystem
@@ -32,11 +33,11 @@ trait Routes extends JsonProtocols {
 
   val logger: LoggingAdapter
 
-  def regionMatcher = config.getString("riot.regions").r
+  def regionMatcher: Regex = config.getString("riot.regions").r
 
-  def queueMatcher = config.getString("riot.queueTypes")
+  def queueMatcher: String = config.getString("riot.queueTypes")
 
-  val optionsSupport = {
+  val optionsSupport: Route = {
     options {
       complete("")
     }
@@ -56,7 +57,7 @@ trait Routes extends JsonProtocols {
     RawHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS, DELETE"),
     RawHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization"))
 
-  def championsRoute(implicit region: String) = {
+  def championsRoute(implicit region: String): Route = {
     pathPrefix("champions") {
       pathEndOrSingleSlash {
         get {
@@ -71,7 +72,7 @@ trait Routes extends JsonProtocols {
   }
 
 //  server[Request] -> Database -> RequestRiot -> client
-  def summonerRoute(implicit region: String) = {
+  def summonerRoute(implicit region: String): Route = {
     pathPrefix("summoner" / Segment) { name =>
       pathEndOrSingleSlash {
         get {
@@ -84,7 +85,7 @@ trait Routes extends JsonProtocols {
     }
   }
 
-  def matchHistoryRoute(implicit region: String) = {
+  def matchHistoryRoute(implicit region: String): Route = {
     pathPrefix("matchhistory" / LongNumber) { summonerId =>
       parameters("queue" ? "", "champions" ? "") { (queueParam: String, championParam: String) =>
         var queueType = queueParam
@@ -107,7 +108,7 @@ trait Routes extends JsonProtocols {
   }
 
 
-  val routes = {
+  val routes: Route = {
     //  logRequestResult("API-service") {
     respondWithHeaders(corsHeaders) {
       pathPrefix("api" / regionMatcher) { regionSegment =>

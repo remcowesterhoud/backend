@@ -32,7 +32,7 @@ object ChampionService {
 
   case object FailedRetrievingChampions extends Exception
 
-  def props = Props[ChampionService]
+  def props: Props = Props[ChampionService]
 }
 
 class ChampionService extends FSM[State, Data] with ActorLogging with RiotService {

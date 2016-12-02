@@ -1,11 +1,9 @@
-package com.analyzedgg.api.testHelpers
+package com.leagueprojecto.api.testHelpers
 
-import akka.actor.ActorSystem
-import akka.testkit.{ImplicitSender, TestKit}
-import org.scalatest.{GivenWhenThen, Matchers, WordSpecLike}
+import org.scalatest.{FlatSpec, GivenWhenThen, Matchers}
 
 import scala.io.Source
 
-abstract class BaseServiceHelper(_system: ActorSystem) extends TestKit(_system) with ImplicitSender with WordSpecLike with Matchers with GivenWhenThen {
+abstract class BaseServiceHelper extends FlatSpec with Matchers with GivenWhenThen {
   def readFileFromClasspath(file: String): String = Source.fromInputStream(getClass.getResourceAsStream(file)).mkString
 }

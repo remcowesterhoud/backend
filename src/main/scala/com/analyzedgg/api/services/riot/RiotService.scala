@@ -1,6 +1,6 @@
 package com.analyzedgg.api.services.riot
 
-import java.util.concurrent.Executors
+import java.util.concurrent.{ExecutorService, Executors}
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
@@ -17,7 +17,7 @@ import com.fasterxml.jackson.module.scala.experimental.ScalaObjectMapper
 import com.typesafe.config.ConfigFactory
 import com.typesafe.scalalogging.LazyLogging
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
 
 object RiotService {
 
@@ -38,15 +38,15 @@ trait RiotService extends LazyLogging {
 
   private val config = ConfigFactory.load()
 
-  val executorService = Executors.newCachedThreadPool()
-  implicit val executionContext = ExecutionContext.fromExecutorService(executorService)
+  val executorService: ExecutorService = Executors.newCachedThreadPool()
+  implicit val executionContext: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(executorService)
   implicit val system = ActorSystem("service")
   implicit val materializer: Materializer = ActorMaterializer()
 
   private val port: Int = config.getInt("riot.api.port")
   private val api_key: String = config.getString("riot.api.key").trim
 
-  private[this] def riotConnectionFlow(region: String, service: String, hostType: String): Flow[HttpRequest, HttpResponse, Any] = {
+  protected def riotConnectionFlow(region: String, service: String, hostType: String): Flow[HttpRequest, HttpResponse, Any] = {
     val hostname: String = config.getString(s"riot.api.hostname.$hostType")
     val host = hostname.replace(":region", region)
 
@@ -76,8 +76,8 @@ trait RiotService extends LazyLogging {
   }
 
   // Services
-  val championByTags = config.getString("riot.services.championByTags.endpoint")
-  val summonerByName = config.getString("riot.services.summonerbyname.endpoint")
-  val matchById = config.getString("riot.services.match.endpoint")
-  val matchListBySummonerId = config.getString("riot.services.matchlist.endpoint")
+  val championByTags: String = config.getString("riot.services.championByTags.endpoint")
+  val summonerByName: String = config.getString("riot.services.summonerbyname.endpoint")
+  val matchById: String = config.getString("riot.services.match.endpoint")
+  val matchListBySummonerId: String = config.getString("riot.services.matchlist.endpoint")
 }

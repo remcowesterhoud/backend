@@ -36,7 +36,7 @@ class MatchHistoryManager(couchDbCircuitBreaker: CircuitBreaker) extends FSM[Sta
 
   import MatchHistoryManager._
 
-  val dbService = context.actorOf(DatabaseService.props(couchDbCircuitBreaker), "dbService")
+  val dbService: ActorRef = context.actorOf(DatabaseService.props(couchDbCircuitBreaker), "dbService")
 
   startWith(Idle, StateData(None, Map.empty))
 

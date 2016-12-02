@@ -11,7 +11,7 @@ import com.analyzedgg.api.services.riot.SummonerService
 import com.typesafe.scalalogging.LazyLogging
 
 import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext}
+import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService}
 
 object SummonerManager extends LazyLogging {
   case class GetSummoner(region: String, name: String)
@@ -19,14 +19,14 @@ object SummonerManager extends LazyLogging {
 
 class SummonerManager {
   private val service = createSummonerService()
-  implicit val executionContext = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
+  implicit val executionContext: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
   val system = ActorSystem("system")
   val decider: Supervision.Decider = { e =>
     Supervision.Stop
     throw e
   }
-  val materializerSettings = ActorMaterializerSettings(system).withSupervisionStrategy(decider)
-  implicit val materializer = ActorMaterializer(materializerSettings)(system)
+  val materializerSettings: ActorMaterializerSettings = ActorMaterializerSettings(system).withSupervisionStrategy(decider)
+  implicit val materializer: ActorMaterializer = ActorMaterializer(materializerSettings)(system)
 
   def getSummoner(region: String, name: String): Summoner = {
     val graph = createGraph(GetSummoner(region, name))
