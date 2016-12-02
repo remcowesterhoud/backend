@@ -8,7 +8,7 @@ case class RiotSummoner(summoner: Summoner)
 
 class RiotSummonerDeserializer extends JsonDeserializer[RiotSummoner] {
 
-  override def deserialize(jp: JsonParser, ctxt: DeserializationContext): RiotSummoner = {
+  override def deserialize(jp: JsonParser, context: DeserializationContext): RiotSummoner = {
     val node: JsonNode = jp.getCodec.readTree(jp)
     val summoner = node.fields.next().getValue
     val id = summoner.get("id").asLong()

@@ -8,33 +8,41 @@ scalaVersion := "2.11.6"
 
 scalacOptions := Seq("-unchecked", "-deprecation", "-encoding", "utf8")
 
+javacOptions ++= Seq("-source", "1.8", "-target", "1.8", "-Xlint")
+
+initialize := {
+  val _ = initialize.value
+  if (sys.props("java.specification.version") != "1.8")
+    sys.error("Java 8 is required for this project.")
+}
+
 resolvers += "Typesafe Repository" at "http://repo.typesafe.com/typesafe/releases/"
 resolvers += "Mvn repository" at "http://mvnrepository.com/artifact/"
 
 libraryDependencies ++= {
-  val akkaVersion = "2.3.10"
-  val akkaStreamVersion = "1.0"
-  val scalaTestVersion = "2.2.1"
+  val akkaVersion = "2.4.11"
+  val scalaTestVersion = "3.0.1"
+  val scalaMockVersion = "3.2.2"
   val logbackVersion = "1.1.2"
   val jacksonVersion: String = "2.7.4"
   val couchDbScalaVersion: String = "0.7.0"
+  val scalaLoggingVersion: String = "3.5.0"
 
   Seq(
     "com.typesafe.akka" %% "akka-actor" % akkaVersion,
     "com.typesafe.akka" %% "akka-remote" % akkaVersion,
     "com.typesafe.akka" %% "akka-slf4j" % akkaVersion,
-    "com.typesafe.akka" %% "akka-stream-experimental" % akkaStreamVersion,
-    "com.typesafe.akka" %% "akka-http-core-experimental" % akkaStreamVersion,
-    "com.typesafe.akka" %% "akka-http-experimental" % akkaStreamVersion,
-    "com.typesafe.akka" %% "akka-http-spray-json-experimental" % akkaStreamVersion,
-    "ch.qos.logback"    % "logback-classic" % logbackVersion % "runtime",
+    "com.typesafe.akka" %% "akka-http-spray-json-experimental" % akkaVersion,
+    "ch.qos.logback" % "logback-classic" % logbackVersion % "runtime",
+    "com.typesafe.scala-logging" %% "scala-logging" % scalaLoggingVersion,
     "com.typesafe.akka" % "akka-testkit_2.11" % akkaVersion % "test,it",
-    "com.typesafe.akka" %% "akka-http-testkit-experimental" % akkaStreamVersion % "test,it",
-    "org.scalatest"     %% "scalatest" % scalaTestVersion % "test,it",
+    "com.typesafe.akka" % "akka-http-testkit_2.11" % akkaVersion,
+    "org.scalatest" %% "scalatest" % scalaTestVersion % "test,it",
+    "org.scalamock" %% "scalamock-scalatest-support" % scalaMockVersion % "test",
     "com.fasterxml.jackson.core" % "jackson-core" % jacksonVersion,
     "com.fasterxml.jackson.core" % "jackson-databind" % jacksonVersion,
     "com.fasterxml.jackson.module" % "jackson-module-scala_2.11" % jacksonVersion,
-    "com.ibm"           %% "couchdb-scala" % couchDbScalaVersion
+    "com.ibm" %% "couchdb-scala" % couchDbScalaVersion
   )
 }
 
@@ -52,6 +60,6 @@ deployTask <<= assembly map { (asm) =>
   s"ssh $account cd league && ./run.sh".!
 }
 
-mainClass in (Compile,run) := Some("com.analyzedgg.api.Startup")
+mainClass in(Compile, run) := Some("com.analyzedgg.api.Startup")
 
 fork in run := true

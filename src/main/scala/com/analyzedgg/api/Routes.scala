@@ -2,58 +2,62 @@ package com.analyzedgg.api
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.event.LoggingAdapter
+import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.http.scaladsl.model.HttpResponse
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.model.headers.RawHeader
 import akka.http.scaladsl.server.Directives._
-import akka.http.scaladsl.server.ExceptionHandler
+import akka.http.scaladsl.server.{ExceptionHandler, Route}
 import akka.pattern.{CircuitBreaker, ask}
 import akka.util.Timeout
-import com.analyzedgg.api.services.{MatchHistoryManager, SummonerManager}
-import com.analyzedgg.api.services.SummonerManager.GetSummoner
-import com.analyzedgg.api.services.riot.{ChampionService, RecentMatchesService, RiotService, SummonerService}
-import com.typesafe.config.Config
-import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import com.analyzedgg.api.services.riot.ChampionService.GetChampions
+import com.analyzedgg.api.services.riot.{ChampionService, RiotService, SummonerService}
+import com.analyzedgg.api.services.{MatchHistoryManager, SummonerManager}
+import com.typesafe.config.Config
 
 import scala.concurrent.ExecutionContextExecutor
 import scala.concurrent.duration._
+import scala.util.matching.Regex
 
 trait Routes extends JsonProtocols {
   implicit val system: ActorSystem
+
   implicit def executor: ExecutionContextExecutor
+
   implicit val timeout: Timeout = Timeout(1.minute)
 
   lazy val couchDbCircuitBreaker =
     new CircuitBreaker(system.scheduler, maxFailures = 5, callTimeout = 5.seconds, resetTimeout = 1.minute)(executor)
 
   def config: Config
+
   val logger: LoggingAdapter
 
-  def regionMatcher = config.getString("riot.regions").r
-  def queueMatcher = config.getString("riot.queueTypes")
+  def regionMatcher: Regex = config.getString("riot.regions").r
 
-  val optionsSupport = {
+  def queueMatcher: String = config.getString("riot.queueTypes")
+
+  val optionsSupport: Route = {
     options {
       complete("")
     }
   }
 
   implicit def myExceptionHandler = ExceptionHandler {
-    case e: RiotService.ServiceNotAvailable   => complete(HttpResponse(ServiceUnavailable))
-    case e: RiotService.TooManyRequests       => complete(HttpResponse(TooManyRequests))
-    case SummonerService.SummonerNotFound  => complete(HttpResponse(NotFound))
-    case RecentMatchesService.FailedRetrievingRecentMatches |
-         ChampionService.FailedRetrievingChampions |
-         SummonerService.FailedRetrievingSummoner => complete(HttpResponse(ServiceUnavailable))
-    case _                                    => complete(HttpResponse(InternalServerError))
+    case e: RiotService.ServiceNotAvailable => complete(HttpResponse(ServiceUnavailable))
+    case e: RiotService.TooManyRequests => complete(HttpResponse(TooManyRequests))
+    case SummonerService.SummonerNotFound => complete(HttpResponse(NotFound))
+    //    case RecentMatchesService.FailedRetrievingRecentMatches |
+    //         ChampionService.FailedRetrievingChampions |
+    //         SummonerService.FailedRetrievingSummoner => complete(HttpResponse(ServiceUnavailable))
+    case _ => complete(HttpResponse(InternalServerError))
   }
 
   val corsHeaders = List(RawHeader("Access-Control-Allow-Origin", "*"),
     RawHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS, DELETE"),
     RawHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization"))
 
-  def championsRoute(implicit region: String) = {
+  def championsRoute(implicit region: String): Route = {
     pathPrefix("champions") {
       pathEndOrSingleSlash {
         get {
@@ -67,21 +71,21 @@ trait Routes extends JsonProtocols {
     }
   }
 
-  def summonerRoute(implicit region: String) = {
+//  server[Request] -> Database -> RequestRiot -> client
+  def summonerRoute(implicit region: String): Route = {
     pathPrefix("summoner" / Segment) { name =>
       pathEndOrSingleSlash {
         get {
           complete {
-            val summonerManager = createSummonerActor
-            val future = summonerManager ? GetSummoner(region, name)
-            future.mapTo[SummonerManager.Result].map(_.summoner)
+            val manager = getSummonerManager
+            manager.getSummoner(region, name)
           }
         } ~ optionsSupport
       }
     }
   }
 
-  def matchHistoryRoute(implicit region: String) = {
+  def matchHistoryRoute(implicit region: String): Route = {
     pathPrefix("matchhistory" / LongNumber) { summonerId =>
       parameters("queue" ? "", "champions" ? "") { (queueParam: String, championParam: String) =>
         var queueType = queueParam
@@ -104,7 +108,7 @@ trait Routes extends JsonProtocols {
   }
 
 
-  val routes = {
+  val routes: Route = {
     //  logRequestResult("API-service") {
     respondWithHeaders(corsHeaders) {
       pathPrefix("api" / regionMatcher) { regionSegment =>
@@ -116,7 +120,7 @@ trait Routes extends JsonProtocols {
   }
 
   protected[Routes] def createChampionActor: ActorRef = system.actorOf(ChampionService.props)
-  protected[Routes] def createSummonerActor: ActorRef = system.actorOf(SummonerManager.props(couchDbCircuitBreaker))
+  protected[Routes] def getSummonerManager: SummonerManager = new SummonerManager()
   protected[Routes] def createMatchHistoryActor: ActorRef = system.actorOf(MatchHistoryManager.props(couchDbCircuitBreaker))
 
 }

@@ -32,35 +32,35 @@ object ChampionService {
 
   case object FailedRetrievingChampions extends Exception
 
-  def props = Props[ChampionService]
+  def props: Props = Props[ChampionService]
 }
 
 class ChampionService extends FSM[State, Data] with ActorLogging with RiotService {
 
-  startWith(Idle, Empty)
-
-
-  when(Idle) {
-    case Event(GetChampions(regionParam: String), Empty) =>
-      val origSender: ActorRef = sender()
-      riotGetRequest(regionParam, championByTags, Map(("champData", "tags")), "api/lol/static-data", "global").pipeTo(self)
-      goto(WaitingForRiotResponse) using RequestData(origSender)
-  }
-
-  when(WaitingForRiotResponse) {
-    case Event(HttpResponse(StatusCodes.OK, _, entity, _), data: RequestData) =>
-      mapRiotTo(entity, classOf[ChampionList]).pipeTo(self)
-      goto(RiotRequestFinished) using data
-    case Event(x, RequestData(origSender)) =>
-      log.error(s"Something went wrong retrieving champions: $x")
-      origSender ! Failure(FailedRetrievingChampions)
-      stop()
-  }
-
-  when(RiotRequestFinished) {
-    case Event(championList: ChampionList, RequestData(origSender)) =>
-      log.debug(s"Got match back: $championList")
-      origSender ! ChampionsResponse(championList)
-      stop()
-  }
+//  startWith(Idle, Empty)
+//
+//
+//  when(Idle) {
+//    case Event(GetChampions(regionParam: String), Empty) =>
+//      val origSender: ActorRef = sender()
+//      riotGetRequest(regionParam, championByTags, Map(("champData", "tags")), "api/lol/static-data", "global").pipeTo(self)
+//      goto(WaitingForRiotResponse) using RequestData(origSender)
+//  }
+//
+//  when(WaitingForRiotResponse) {
+//    case Event(HttpResponse(StatusCodes.OK, _, entity, _), data: RequestData) =>
+//      mapRiotTo(entity, classOf[ChampionList]).pipeTo(self)
+//      goto(RiotRequestFinished) using data
+//    case Event(x, RequestData(origSender)) =>
+//      log.error(s"Something went wrong retrieving champions: $x")
+//      origSender ! Failure(FailedRetrievingChampions)
+//      stop()
+//  }
+//
+//  when(RiotRequestFinished) {
+//    case Event(championList: ChampionList, RequestData(origSender)) =>
+//      log.debug(s"Got match back: $championList")
+//      origSender ! ChampionsResponse(championList)
+//      stop()
+//  }
 }
