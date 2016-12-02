@@ -12,10 +12,7 @@ import org.scalatest.{FlatSpec, Matchers}
 abstract class RoutesTest extends FlatSpec with Matchers with ScalatestRouteTest with Routes {
   override def config: Config = testConfig
   override val logger: LoggingAdapter = system.log
-
-
-
-
+  
 //    override def createSummonerActor = {
 //      val summonerProbe = new TestProbe(system)
 //      setSummonerAutoPilot(summonerProbe)
