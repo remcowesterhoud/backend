@@ -1,35 +1,21 @@
 package com.leagueprojecto.api.services
 
-import akka.actor.ActorSystem
-import akka.pattern.CircuitBreaker
-import akka.testkit.TestProbe
 import com.analyzedgg.api.domain.Summoner
 import com.analyzedgg.api.domain.riot.RiotSummoner
 import com.analyzedgg.api.services.SummonerManager
+import com.analyzedgg.api.services.couchdb.SummonerRepository
 import com.analyzedgg.api.services.riot.SummonerService
 import com.analyzedgg.api.services.riot.SummonerService.SummonerNotFound
-import org.scalatest.{FlatSpec, GivenWhenThen, Matchers}
+import org.scalamock.scalatest.MockFactory
+import org.scalatest.{FlatSpec, Matchers}
 
-import scala.concurrent.ExecutionContextExecutor
-import scala.concurrent.duration._
-
-class SummonerManagerTest extends FlatSpec with Matchers with GivenWhenThen {
-  val system: ActorSystem = ActorSystem.create()
-  val executor: ExecutionContextExecutor = system.dispatcher
-  val dbProbe = new TestProbe(system)
-  val riotProbe = new TestProbe(system)
-
-  lazy val couchDbCircuitBreaker =
-    new CircuitBreaker(system.scheduler, maxFailures = 5, callTimeout = 10.seconds, resetTimeout = 1.minute)(executor)
-  val testRegion = "EUW"
-  val testName = "Wagglez"
-  val testNameNoDb = "No db"
-  val testNameNoDbNorRiot = "No db nor riot"
-  val testSummoner = Summoner(123123123, testName, 100, 1434315156000L, 30)
+class SummonerManagerTest extends FlatSpec with Matchers with MockFactory {
+  val testSummoner = Summoner(123123123, "Wagglez", 100, 1434315156000L, 30)
   val testRiotSummoner = RiotSummoner(testSummoner)
 
   class TestSummonerManager extends SummonerManager {
-    override def createSummonerService(): SummonerService = new SummonerServiceMock()
+    override val service: SummonerService = stub[SummonerService]
+    override val repository: SummonerRepository = mock[SummonerRepository]
   }
 
   class SummonerServiceMock extends SummonerService {
@@ -42,25 +28,28 @@ class SummonerManagerTest extends FlatSpec with Matchers with GivenWhenThen {
     }
   }
 
-  "SummonerManager" should "get a Summoner from Riot" in {
-    Given("an instance of the SummonerManager")
+  "SummonerManager" should "get a Summoner from Riot and save it in the database" in {
+    val region = "euw"
+    val name = "exists"
     val manager = new TestSummonerManager()
+    manager.service.getByName _ when(region, name) returns testRiotSummoner
+    manager.repository.save _ expects(testSummoner, region)
 
-    When("an existing Summoner is requested from riot")
     val response = manager.getSummoner("euw", "exists")
 
-    Then("the Summoner should match the returned Summoner")
     response.shouldEqual(testSummoner)
   }
 
   it should "throw a SummonerNotFound exception if no Summoner exists" in {
-    Given("an instance of the SummonerManager")
+    val region = "euw"
+    val name = "noExists"
     val manager = new TestSummonerManager()
+    manager.service.getByName _ when(region, name) throwing {
+      SummonerNotFound
+    }
 
-    When("a non existing Summoner is requested from riot")
-    val exception = the[SummonerNotFound.type].thrownBy(manager.getSummoner("euw", "noExists"))
+    val exception = the[SummonerNotFound.type].thrownBy(manager.getSummoner(region, name))
 
-    Then("A SummonerNotFound exception must be thrown")
     exception.shouldEqual(SummonerNotFound)
   }
 }
