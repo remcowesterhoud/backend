@@ -39,20 +39,17 @@ class SummonerManager {
   }
 
   private def retrieveFromCache(data: GetSummoner): GetSummoner = {
-    println("Retrieved from cache")
     data.option = repository.getByName(data.region, data.name)
     data
   }
 
   private def retrieveFromRiot(data: GetSummoner): GetSummoner = {
-    println("Retrieved from riot")
     val summoner = service.getByName(data.region, data.name).summoner
     data.option = Some(summoner)
     data
   }
 
   private def cacheSummoner(data: GetSummoner) = {
-    println("Cached stuff")
     repository.save(data.option.get, data.region)
   }
 
