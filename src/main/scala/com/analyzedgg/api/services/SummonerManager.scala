@@ -3,8 +3,8 @@ package com.analyzedgg.api.services
 import java.util.concurrent.Executors
 
 import akka.actor.ActorSystem
-import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, RunnableGraph, Sink, Source}
-import akka.stream.{ActorMaterializer, ActorMaterializerSettings, ClosedShape, Supervision}
+import akka.stream._
+import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Merge, RunnableGraph, Sink, Source}
 import com.analyzedgg.api.domain.Summoner
 import com.analyzedgg.api.services.SummonerManager.GetSummoner
 import com.analyzedgg.api.services.couchdb.SummonerRepository
@@ -34,23 +34,30 @@ class SummonerManager {
 
   def getSummoner(region: String, name: String): Summoner = {
     val graph = createGraph(GetSummoner(region, name))
-    val x = graph.run()
     val result = Await.result(graph.run(), 5.seconds)
     result.option.get
   }
 
+  private def retrieveFromCache(data: GetSummoner): GetSummoner = {
+    println("Retrieved from cache")
+    data.option = repository.getByName(data.region, data.name)
+    data
+  }
+
   private def retrieveFromRiot(data: GetSummoner): GetSummoner = {
+    println("Retrieved from riot")
     val summoner = service.getByName(data.region, data.name).summoner
     data.option = Some(summoner)
     data
   }
 
   private def cacheSummoner(data: GetSummoner) = {
+    println("Cached stuff")
     repository.save(data.option.get, data.region)
   }
 
   private def createGraph(summoner: GetSummoner) = {
-    val returnSink = Sink.head[GetSummoner]
+    val returnSink = Sink.head[GetSummoner].async
     RunnableGraph.fromGraph(GraphDSL.create(returnSink) { implicit builder => returnSink =>
       // Import the implicits so the ~> syntax can be used
       import GraphDSL.Implicits._
@@ -58,20 +65,27 @@ class SummonerManager {
       val source = Source.single[GetSummoner](summoner)
 
       // Flows
-      val fromRiotFlow = Flow[GetSummoner].map(retrieveFromRiot)
-      val cacheBroadcast = builder.add(Broadcast[GetSummoner](2))
+      // Tries to retrieve the Summoner from the cache
+      val fromCache = Flow[GetSummoner].map(retrieveFromCache).async
+      // Tries to retrieve the Summoner from the Riot api
+      val fromRiotFlow = Flow[GetSummoner].filter(data => data.option.isEmpty).map(retrieveFromRiot).async
+      // Broadcasts the result from the cache so it can be returned if it existed, or retrieved from Riot if it didn't
+      val cacheBroadcast1 = builder.add(Broadcast[GetSummoner](2))
+      // Broadcasts the result from riot so it can be returned and cached
+      val cacheBroadcast2 = builder.add(Broadcast[GetSummoner](2))
+      // Merges the different flows that should output to returnSink into a single flow
+      val merge = builder.add(Merge[GetSummoner](2))
+      // Filters out elements where the summoner doesn't exist in the cache so it doesn't get returned yet
+      val filterFlow = Flow[GetSummoner].filter(data => data.option.isDefined).async
 
       // Sinks
-      val cacheSink = Sink.foreach(cacheSummoner)
+      // Caches the summoner in the database
+      val cacheSink = Sink.foreach(cacheSummoner).async
 
-      // Chain the Stream components together
-      // source: Start of stream, sends the passed GetSummoner object downstream
-      // fromRiotFlow: Uses the GetSummoner object to retrieve the summoner from the Riot API
-      // cacheBroadcast: Send the element to the returnSink and the cacheSink
-      // returnSink: End of stream, returns the summoner
-      // cacheSink: Caches the summoner in the database
-      source ~> fromRiotFlow ~> cacheBroadcast ~> returnSink
-      cacheBroadcast ~> cacheSink
+      source ~> fromCache ~> cacheBroadcast1 ~> fromRiotFlow ~> cacheBroadcast2 ~> cacheSink
+      cacheBroadcast1 ~> filterFlow ~> merge
+      cacheBroadcast2 ~> merge
+      merge ~> returnSink
 
       ClosedShape
     })
