@@ -5,6 +5,7 @@ import akka.http.scaladsl.model.StatusCodes._
 import com.analyzedgg.api.domain.Summoner
 import com.analyzedgg.api.services.SummonerManager
 import com.analyzedgg.api.services.riot.SummonerService.SummonerNotFound
+
 // Do not remove the following import! IntelliJ might say it's not used, but it is for converting json to case classes.
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 

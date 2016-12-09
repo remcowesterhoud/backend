@@ -1,16 +1,18 @@
 package com.analyzedgg.api.services.couchdb
 
+import akka.pattern.{CircuitBreaker, CircuitBreakerOpenException}
 import com.analyzedgg.api.domain.Summoner
 import com.ibm.couchdb.Res.Error
 import com.ibm.couchdb.{CouchException, TypeMapping}
 import org.http4s.Status.NotFound
 
-import scalaz.{-\/, \/-}
+import scala.util.{Failure, Success, Try}
+import scalaz.{-\/, \/, \/-}
 
 /**
   * Created by RemcoW on 5-12-2016.
   */
-class SummonerRepository extends AbstractRepository[Summoner] {
+class SummonerRepository(couchDbCircuitBreaker: CircuitBreaker) extends AbstractRepository {
   val mapping = TypeMapping(classOf[Summoner] -> "Summoner")
   val db = couch.db("summoner-db", mapping)
 
@@ -25,23 +27,30 @@ class SummonerRepository extends AbstractRepository[Summoner] {
     }
   }
 
-  def getByName(region: String, name: String): Option[Summoner] ={
+  def getByName(region: String, name: String): Summoner ={
     val id = generateId(region, name)
-    val summoners = db.docs.get[Summoner](id).attemptRun
+    val summoners = tryWithCircuitBreaker(db.docs.get[Summoner](id).attemptRun)
     summoners match {
       case \/-(summonerDoc) =>
         logger.info(s"Yay got summoner from Db: $summonerDoc")
-        Some(summonerDoc.doc)
+        summonerDoc.doc
       case -\/(CouchException(e: Error)) if e.status == NotFound =>
         logger.info(s"No summoner found ($id) from Db")
-        None
+        null
       case -\/(e) =>
         logger.error(s"Error retrieving summoner ($id) from Db with reason: $e")
-        None
+        null
     }
   }
 
   private def generateId(region: String, name: String): String ={
     s"$region:$name"
+  }
+
+  private[this] def tryWithCircuitBreaker[A](query: => Throwable \/ A): Throwable \/ A = {
+    Try (couchDbCircuitBreaker.withSyncCircuitBreaker(query)) match {
+      case Success(validResponse: (Throwable \/ A) ) => validResponse
+      case Failure(e: CircuitBreakerOpenException) => -\/(e)
+    }
   }
 }
