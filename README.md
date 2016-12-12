@@ -4,7 +4,7 @@
 
 ### Develop info
 [![Build Status](https://travis-ci.org/remcowesterhoud/backend.svg?branch=develop)](https://travis-ci.org/remcowesterhoud/backend)
-[![Coverage Status](https://coveralls.io/repos/github/remcowesterhoud/backend/badge.svg?branch=feature%2FISRW-4_Summoner_data_ophalen)](https://coveralls.io/github/remcowesterhoud/backend?branch=feature%2FISRW-4_Summoner_data_ophalen)
+[![Coverage Status](https://coveralls.io/repos/github/remcowesterhoud/backend/badge.svg?branch=develop)](https://coveralls.io/github/remcowesterhoud/backend?branch=develop)
 
 # League API
 This is the backend for the League API project.
