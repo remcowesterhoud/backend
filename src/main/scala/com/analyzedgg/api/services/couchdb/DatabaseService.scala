@@ -3,7 +3,7 @@ package com.analyzedgg.api.services.couchdb
 import akka.actor.{Actor, ActorLogging, Props}
 import akka.pattern.{CircuitBreaker, CircuitBreakerOpenException}
 import com.ibm.couchdb.Res.Error
-import com.ibm.couchdb.{CouchDb, CouchException, TypeMapping}
+import com.ibm.couchdb.{CouchDb, CouchDbApi, CouchException, TypeMapping}
 import com.analyzedgg.api.domain.{MatchDetail, Summoner}
 import org.http4s.Status.NotFound
 import com.analyzedgg.api.services.couchdb.DatabaseService._
@@ -38,10 +38,10 @@ class DatabaseService(couchDbCircuitBreaker: CircuitBreaker) extends Actor with 
   val couch = CouchDb(hostname, port)
   val summonerMapping = TypeMapping(classOf[Summoner] -> "Summoner")
   val matchMapping = TypeMapping(classOf[MatchDetail] -> "MatchDetail")
-  val summonerDb = couch.db("summoner-db", summonerMapping)
-  val matchesDb = couch.db("matches-db", matchMapping)
+  val summonerDb: CouchDbApi = couch.db("summoner-db", summonerMapping)
+  val matchesDb: CouchDbApi = couch.db("matches-db", matchMapping)
 
-  override def receive = {
+  override def receive: PartialFunction[Any, Unit] = {
     case GetSummoner(region, name) =>
       val id = s"$region:$name"
 
