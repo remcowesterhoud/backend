@@ -71,14 +71,12 @@ trait Routes extends JsonProtocols {
     }
   }
 
-//  server[Request] -> Database -> RequestRiot -> client
   def summonerRoute(implicit region: String): Route = {
     pathPrefix("summoner" / Segment) { name =>
       pathEndOrSingleSlash {
         get {
           complete {
-            val manager = getSummonerManager
-            manager.getSummoner(region, name)
+            getSummonerManager.getSummoner(region, name)
           }
         } ~ optionsSupport
       }
@@ -120,7 +118,9 @@ trait Routes extends JsonProtocols {
   }
 
   protected[Routes] def createChampionActor: ActorRef = system.actorOf(ChampionService.props)
-  protected[Routes] def getSummonerManager: SummonerManager = new SummonerManager()
+
+  protected[Routes] def getSummonerManager: SummonerManager = SummonerManager()
+
   protected[Routes] def createMatchHistoryActor: ActorRef = system.actorOf(MatchHistoryManager.props(couchDbCircuitBreaker))
 
 }

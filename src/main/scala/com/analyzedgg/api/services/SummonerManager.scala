@@ -3,89 +3,104 @@ package com.analyzedgg.api.services
 import java.util.concurrent.Executors
 
 import akka.actor.ActorSystem
+import akka.pattern.CircuitBreaker
 import akka.stream._
-import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Merge, RunnableGraph, Sink, Source}
+import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Merge, Sink, Source}
 import com.analyzedgg.api.domain.Summoner
 import com.analyzedgg.api.services.SummonerManager.GetSummoner
 import com.analyzedgg.api.services.couchdb.SummonerRepository
 import com.analyzedgg.api.services.riot.SummonerService
 import com.typesafe.scalalogging.LazyLogging
 
+import scala.concurrent._
 import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService}
 
-object SummonerManager extends LazyLogging {
+object SummonerManager {
 
-  case class GetSummoner(region: String, name: String, var option: Option[Summoner] = None)
+  private val manager: SummonerManager = new SummonerManager()
+
+  def apply(): SummonerManager = manager
+
+  case class GetSummoner(region: String, name: String, var summonerPromise: Promise[Summoner] = Promise[Summoner]()) {
+    def result: Summoner = Await.result(summonerPromise.future, 5.seconds)
+  }
 
 }
 
-class SummonerManager {
-  protected val service = new SummonerService()
-  protected val repository = new SummonerRepository()
+class SummonerManager extends LazyLogging {
+  lazy val couchDbCircuitBreaker =
+    new CircuitBreaker(system.scheduler, maxFailures = 5, callTimeout = 5.seconds, resetTimeout = 1.minute)
   implicit val executionContext: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
   val system = ActorSystem("system")
   val decider: Supervision.Decider = { e =>
-    Supervision.Stop
-    throw e
+    logger.warn(e.getMessage)
+    Supervision.Resume
   }
   val materializerSettings: ActorMaterializerSettings = ActorMaterializerSettings(system).withSupervisionStrategy(decider)
   implicit val materializer: ActorMaterializer = ActorMaterializer(materializerSettings)(system)
+  protected val service = new SummonerService()
+  protected val repository = new SummonerRepository(couchDbCircuitBreaker)
+  private val graph = createGraph().run()
 
   def getSummoner(region: String, name: String): Summoner = {
-    val graph = createGraph(GetSummoner(region, name))
-    val result = Await.result(graph.run(), 5.seconds)
-    result.option.get
+    val getSummoner = GetSummoner(region, name)
+    graph.offer(getSummoner)
+    getSummoner.result
   }
 
-  private def retrieveFromCache(data: GetSummoner): GetSummoner = {
-    data.option = repository.getByName(data.region, data.name)
-    data
-  }
+  private def createGraph() = {
+    // This Sink doesn't need to do anything with the elements as the reference to the objects is being tracked till they complete the Stream
+    val returnSink = Sink.ignore
+    val source = Source.queue[GetSummoner](100, OverflowStrategy.backpressure)
 
-  private def retrieveFromRiot(data: GetSummoner): GetSummoner = {
-    val summoner = service.getByName(data.region, data.name).summoner
-    data.option = Some(summoner)
-    data
-  }
-
-  private def cacheSummoner(data: GetSummoner) = {
-    repository.save(data.option.get, data.region)
-  }
-
-  private def createGraph(summoner: GetSummoner) = {
-    val returnSink = Sink.head[GetSummoner].async
-    RunnableGraph.fromGraph(GraphDSL.create(returnSink) { implicit builder => returnSink =>
+    val getSummonerFlow = Flow.fromGraph(GraphDSL.create() { implicit builder =>
       // Import the implicits so the ~> syntax can be used
       import GraphDSL.Implicits._
-      // Source
-      val source = Source.single[GetSummoner](summoner)
 
       // Flows
       // Tries to retrieve the Summoner from the cache
-      val fromCache = Flow[GetSummoner].map(retrieveFromCache).async
+      val fromCacheFlow = builder.add(Flow[GetSummoner].map(retrieveFromCache).async)
       // Tries to retrieve the Summoner from the Riot api
-      val fromRiotFlow = Flow[GetSummoner].filter(data => data.option.isEmpty).map(retrieveFromRiot).async
+      val fromRiotFlow = Flow[GetSummoner].filter(data => !data.summonerPromise.isCompleted).map(retrieveFromRiot).async
       // Broadcasts the result from the cache so it can be returned if it existed, or retrieved from Riot if it didn't
-      val cacheBroadcast1 = builder.add(Broadcast[GetSummoner](2))
+      val cacheResultBroadcast = builder.add(Broadcast[GetSummoner](2))
       // Broadcasts the result from riot so it can be returned and cached
-      val cacheBroadcast2 = builder.add(Broadcast[GetSummoner](2))
+      val riotResultBroadcast = builder.add(Broadcast[GetSummoner](2))
       // Merges the different flows that should output to returnSink into a single flow
       val merge = builder.add(Merge[GetSummoner](2))
       // Filters out elements where the summoner doesn't exist in the cache so it doesn't get returned yet
-      val filterFlow = Flow[GetSummoner].filter(data => data.option.isDefined).async
+      val filterFlow = Flow[GetSummoner].filter(data => data.summonerPromise.isCompleted).async
 
       // Sinks
       // Caches the summoner in the database
       val cacheSink = Sink.foreach(cacheSummoner).async
 
-      source ~> fromCache ~> cacheBroadcast1 ~> fromRiotFlow ~> cacheBroadcast2 ~> cacheSink
-      cacheBroadcast1 ~> filterFlow ~> merge
-      cacheBroadcast2 ~> merge
-      merge ~> returnSink
+      fromCacheFlow ~> cacheResultBroadcast ~> fromRiotFlow ~> riotResultBroadcast ~> cacheSink
+      cacheResultBroadcast ~> filterFlow ~> merge
+      riotResultBroadcast ~> merge
 
-      ClosedShape
+      // The shape of this Graph is a Flow, meaning it has a single input and a single output.
+      FlowShape(fromCacheFlow.in, merge.out)
     })
+
+    // Connect the Source to the Flow to the Sink
+    source.via(getSummonerFlow).to(returnSink)
+  }
+
+  private def retrieveFromCache(data: GetSummoner): GetSummoner = {
+    val result = repository.getByName(data.region, data.name)
+    if (result != null) {
+      data.summonerPromise.success(result)
+    }
+    data
+  }
+
+  private def retrieveFromRiot(data: GetSummoner): GetSummoner = {
+    service.getByName(data)
+  }
+
+  private def cacheSummoner(data: GetSummoner) = {
+    data.summonerPromise.future.onSuccess { case summoner => repository.save(summoner, data.region) }
   }
 }
 
