@@ -95,9 +95,7 @@ trait Routes extends JsonProtocols {
         pathEndOrSingleSlash {
           get {
             complete {
-              val matchHistoryManager = createMatchHistoryActor
-              val future = matchHistoryManager ? MatchHistoryManager.GetMatches(region, summonerId, queueParam, championParam)
-              future.mapTo[MatchHistoryManager.Result].map(_.data)
+              getMatchHistoryManager.getMatchHistory(region, summonerId, queueParam, championParam)
             }
           } ~ optionsSupport
         }
@@ -121,6 +119,5 @@ trait Routes extends JsonProtocols {
 
   protected[Routes] def getSummonerManager: SummonerManager = SummonerManager()
 
-  protected[Routes] def createMatchHistoryActor: ActorRef = system.actorOf(MatchHistoryManager.props(couchDbCircuitBreaker))
-
+  protected[Routes] def getMatchHistoryManager: MatchHistoryManager = MatchHistoryManager()
 }
