@@ -27,7 +27,7 @@ class SummonerRepository(couchDbCircuitBreaker: CircuitBreaker) extends Abstract
     }
   }
 
-  def getByName(region: String, name: String): Summoner ={
+  def getByName(region: String, name: String): Summoner = {
     val id = generateId(region, name)
     val summoners = tryWithCircuitBreaker(db.docs.get[Summoner](id).attemptRun)
     summoners match {
@@ -43,13 +43,13 @@ class SummonerRepository(couchDbCircuitBreaker: CircuitBreaker) extends Abstract
     }
   }
 
-  private def generateId(region: String, name: String): String ={
+  private def generateId(region: String, name: String): String = {
     s"$region:$name"
   }
 
   private[this] def tryWithCircuitBreaker[A](query: => Throwable \/ A): Throwable \/ A = {
-    Try (couchDbCircuitBreaker.withSyncCircuitBreaker(query)) match {
-      case Success(validResponse: (Throwable \/ A) ) => validResponse
+    Try(couchDbCircuitBreaker.withSyncCircuitBreaker(query)) match {
+      case Success(validResponse: (Throwable \/ A)) => validResponse
       case Failure(e: CircuitBreakerOpenException) => -\/(e)
     }
   }
