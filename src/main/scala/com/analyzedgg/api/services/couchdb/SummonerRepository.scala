@@ -18,7 +18,7 @@ class SummonerRepository(couchDbCircuitBreaker: CircuitBreaker) extends Abstract
 
   def save(summoner: Summoner, region: String): Unit = {
     val id = generateId(region, summoner.name.toLowerCase)
-    val response = db.docs.create(summoner, id).attemptRun
+    val response = tryWithCircuitBreaker(db.docs.create(summoner, id).attemptRun)
     response match {
       case \/-(_) =>
         logger.info("Yay, summoner saved!")
