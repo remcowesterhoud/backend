@@ -31,7 +31,7 @@ class SummonerManager extends LazyLogging {
   lazy val couchDbCircuitBreaker =
     new CircuitBreaker(system.scheduler, maxFailures = 5, callTimeout = 5.seconds, resetTimeout = 1.minute)
   implicit val executionContext: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
-  val system = ActorSystem("system")
+  val system = ActorSystem("summoner-system")
   val decider: Supervision.Decider = { e =>
     logger.warn(e.getMessage)
     Supervision.Resume
