@@ -7,6 +7,6 @@ script:
 - sbt clean coverage test scalastyle
 - sbt coverageReport
 - sbt coverageAggregate
-- sbt codacyCoverage
 after_success:
 - sbt coveralls
+- sbt codacyCoverage
