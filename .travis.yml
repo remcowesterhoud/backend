@@ -3,5 +3,10 @@ scala:
 - 2.11.8
 jdk:
 - oraclejdk8
-script: sbt clean coverage test scalastyle
-after_success: sbt coverageReport coverageAggregate coveralls codacyCoverage
+script:
+- sbt clean coverage test scalastyle
+- sbt coverageReport
+- sbt coverageAggregate
+- sbt codacyCoverage
+after_success:
+- sbt coveralls
