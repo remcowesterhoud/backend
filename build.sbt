@@ -21,7 +21,7 @@ resolvers += "Typesafe Repository" at "http://repo.typesafe.com/typesafe/release
 resolvers += "Mvn repository" at "http://mvnrepository.com/artifact/"
 
 libraryDependencies ++= {
-  val akkaVersion = "2.4.14"
+  val akkaVersion = "2.4.11"
   val scalaTestVersion = "3.0.1"
   val scalaMockVersion = "3.3.0"
   val logbackVersion = "1.1.2"
