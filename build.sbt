@@ -4,7 +4,7 @@ organization := "com.analyzedgg"
 
 version := "0.0.1"
 
-scalaVersion := "2.12.1"
+scalaVersion := "2.11.6"
 
 scalacOptions := Seq("-unchecked", "-deprecation", "-encoding", "utf8")
 
@@ -21,7 +21,7 @@ resolvers += "Typesafe Repository" at "http://repo.typesafe.com/typesafe/release
 resolvers += "Mvn repository" at "http://mvnrepository.com/artifact/"
 
 libraryDependencies ++= {
-  val akkaVersion = "2.4.11"
+  val akkaVersion = "2.4.14"
   val scalaTestVersion = "3.0.1"
   val scalaMockVersion = "3.3.0"
   val logbackVersion = "1.1.2"
