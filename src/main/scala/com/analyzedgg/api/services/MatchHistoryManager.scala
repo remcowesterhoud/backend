@@ -2,9 +2,10 @@ package com.analyzedgg.api.services
 
 import java.util.concurrent.Executors
 
+import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.pattern.CircuitBreaker
-import akka.stream.scaladsl.{Flow, GraphDSL, Merge, RunnableGraph, Sink, Source, SourceQueueWithComplete}
+import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Merge, RunnableGraph, Sink, Source, SourceQueueWithComplete}
 import akka.stream._
 import com.analyzedgg.api.domain.MatchDetail
 import com.analyzedgg.api.domain.riot.RecentMatch
@@ -21,7 +22,11 @@ object MatchHistoryManager {
 
   def apply(): MatchHistoryManager = manager
 
-  case class GetMatches(region: String, summonerId: Long, queueType: String, championList: String, var detailsPromise: Promise[Seq[MatchDetail]] = Promise(), var lastIdsPromise: Promise[Seq[Long]] = Promise()) {
+  case class GetMatches(region: String, summonerId: Long, queueType: String, championList: String) {
+    var detailsPromise: Promise[Seq[MatchDetail]] = Promise()
+    var lastIdsPromise: Promise[Seq[Long]] = Promise()
+    var matchesMap: Map[Long, Option[MatchDetail]] = null
+
     def result: Seq[MatchDetail] = Await.result(detailsPromise.future, 5.seconds)
   }
 
@@ -38,7 +43,7 @@ class MatchHistoryManager extends LazyLogging {
   }
   val materializerSettings: ActorMaterializerSettings = ActorMaterializerSettings(system).withSupervisionStrategy(decider)
   implicit val materializer: ActorMaterializer = ActorMaterializer(materializerSettings)(system)
-  private final val matchAmount: Int = 10
+  private final val matchAmount: Int = 1
 
   protected val service = new TempMatchService()
   protected val repository = null
@@ -55,38 +60,79 @@ class MatchHistoryManager extends LazyLogging {
     val returnSink = Sink.ignore
     val source = Source.queue[GetMatches](100, OverflowStrategy.backpressure)
 
-    val flow = Flow.fromGraph(GraphDSL.create() { implicit builder =>
+    val lastIdsFlow = Flow.fromGraph(GraphDSL.create() { implicit builder =>
       // Import the implicits so the ~> syntax can be used
       import GraphDSL.Implicits._
 
       val lastIdsFlow = builder.add(Flow[GetMatches].map(getLastIds).async)
-      val lastIdsMerge = builder.add(Merge[GetMatches](1))
-      val lastIdsFailedFilter = Flow[GetMatches].filter(filterLastIds).async
+      val lastIdsBroadcast = builder.add(Broadcast[GetMatches](2))
+      val lastIdsFailedFilter = Flow[GetMatches].filter(data => !foundLastIds(data)).async
+      val lastIdsSuccessFilter = Flow[GetMatches].filter(data => foundLastIds(data)).async
+      val merge = builder.add(Merge[GetMatches](2))
+      val detailsFromRiotFlow = createMatchDetailsFlow.async
 
-      lastIdsFlow ~> lastIdsFailedFilter ~> lastIdsMerge
 
-      FlowShape(lastIdsFlow.in, lastIdsMerge.out)
+      lastIdsFlow ~> lastIdsBroadcast ~> lastIdsSuccessFilter ~> detailsFromRiotFlow ~> merge
+      lastIdsBroadcast ~> lastIdsFailedFilter ~> merge
+
+
+      FlowShape(lastIdsFlow.in, merge.out)
     })
-    source.via(flow).to(returnSink)
+    source.via(lastIdsFlow).to(returnSink)
   }
+
+  private def createMatchDetailsFlow = Flow.fromGraph(GraphDSL.create() { implicit builder =>
+    // Import the implicits so the ~> syntax can be used
+    import GraphDSL.Implicits._
+
+    val mapIdsFlow = builder.add(Flow[GetMatches].map(mapMatchIds))
+    val detailsFromRiotFlow = builder.add(Flow[GetMatches].map(getDetailsFromRiot))
+
+    //TODO: Finish this, details get fetched now send them back
+    mapIdsFlow ~> detailsFromRiotFlow
+
+    FlowShape(mapIdsFlow.in, detailsFromRiotFlow.out)
+  })
 
   private def getLastIds(data: GetMatches): GetMatches = {
     logger.info(s"Requesting last $matchAmount match ids from riot")
     service.getRecentMatchIds(data, matchAmount)
   }
 
-  private def filterLastIds(data: GetMatches): Boolean = {
+  private def foundLastIds(data: GetMatches): Boolean = {
     data.lastIdsPromise.future.value match {
-      case Some(Success(v)) => false
+      case Some(Success(v)) => true
       case Some(Failure(e)) =>
         data.detailsPromise.failure(e)
-        true
+        false
       case _ =>
         val msg = "Could not determine status of last ID promise"
         logger.error(msg)
         data.detailsPromise.failure(new RuntimeException(msg))
-        true
+        false
     }
+  }
+
+  private def mapMatchIds(data: GetMatches) = {
+    val ids: Seq[Long] = Await.result(data.lastIdsPromise.future, 5.seconds)
+    data.matchesMap = ids.map(id => id -> None).toMap
+    data
+  }
+
+  private def getDetailsFromRiot(data: GetMatches): GetMatches = {
+    val matchesToRetrieve = data.matchesMap.filter(m => m._2.isEmpty).keys
+    logger.info(s"going to get matches: [$matchesToRetrieve] from riot")
+    // TODO: Retrieve and map the matches in parallel
+    matchesToRetrieve.foreach(matchId => {
+      val details = service.getMatchDetails(data.region, data.summonerId, matchId)
+      if (details != null) {
+        data.matchesMap = data.matchesMap.updated(matchId, Some(details))
+      }
+      else {
+        data.matchesMap -= matchId
+      }
+    })
+    data
   }
 
   private def hasEmptyValues(mergedMatches: Map[Long, Option[MatchDetail]]): Boolean =
