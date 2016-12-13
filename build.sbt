@@ -4,7 +4,7 @@ organization := "com.analyzedgg"
 
 version := "0.0.1"
 
-scalaVersion := "2.11.6"
+scalaVersion := "2.12.1"
 
 scalacOptions := Seq("-unchecked", "-deprecation", "-encoding", "utf8")
 
