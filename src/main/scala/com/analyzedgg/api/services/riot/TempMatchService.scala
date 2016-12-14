@@ -1,14 +1,12 @@
 package com.analyzedgg.api.services.riot
 
-import akka.NotUsed
-import akka.stream.scaladsl.{Flow, RunnableGraph, Sink, Source}
-import com.analyzedgg.api.domain.{MatchDetail, PlayerStats, Team, Teams}
 import com.analyzedgg.api.domain.riot._
+import com.analyzedgg.api.domain.{MatchDetail, PlayerStats, Team, Teams}
 import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
 import com.analyzedgg.api.services.riot.TempMatchService.FailedRetrievingRecentMatches
 import com.typesafe.scalalogging.LazyLogging
 
-import scala.concurrent.{Await, Future}
+import scala.concurrent.Await
 import scala.concurrent.duration._
 
 object TempMatchService {
@@ -36,7 +34,9 @@ case class TempMatchService() extends RiotService with LazyLogging {
     val response = Await.result(riotGetRequest(region, matchById + matchId), 5.seconds)
     response.status.intValue() match {
       case 200 => toMatchDetail(Await.result(mapRiotTo(response.entity, classOf[RiotMatch]), 5.seconds), summonerId)
-      case _ => null
+      case _ =>
+        logger.error(s"Failed retrieving match details.\nReason: $response")
+        null
     }
   }
 

@@ -2,13 +2,11 @@ package com.analyzedgg.api.services
 
 import java.util.concurrent.Executors
 
-import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.pattern.CircuitBreaker
-import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Merge, RunnableGraph, Sink, Source, SourceQueueWithComplete}
 import akka.stream._
+import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Merge, RunnableGraph, Sink, Source, SourceQueueWithComplete}
 import com.analyzedgg.api.domain.MatchDetail
-import com.analyzedgg.api.domain.riot.RecentMatch
 import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
 import com.analyzedgg.api.services.riot.TempMatchService
 import com.typesafe.scalalogging.LazyLogging
@@ -25,7 +23,7 @@ object MatchHistoryManager {
   case class GetMatches(region: String, summonerId: Long, queueType: String, championList: String) {
     var detailsPromise: Promise[Seq[MatchDetail]] = Promise()
     var lastIdsPromise: Promise[Seq[Long]] = Promise()
-    var matchesMap: Map[Long, Option[MatchDetail]] = null
+    var matchesMap: Map[Long, Option[MatchDetail]] = _
 
     def result: Seq[MatchDetail] = Await.result(detailsPromise.future, 5.seconds)
   }
@@ -43,7 +41,7 @@ class MatchHistoryManager extends LazyLogging {
   }
   val materializerSettings: ActorMaterializerSettings = ActorMaterializerSettings(system).withSupervisionStrategy(decider)
   implicit val materializer: ActorMaterializer = ActorMaterializer(materializerSettings)(system)
-  private final val matchAmount: Int = 1
+  private final val matchAmount: Int = 10
 
   protected val service = new TempMatchService()
   protected val repository = null
@@ -70,13 +68,13 @@ class MatchHistoryManager extends LazyLogging {
       val lastIdsSuccessFilter = Flow[GetMatches].filter(data => foundLastIds(data)).async
       val merge = builder.add(Merge[GetMatches](2))
       val detailsFromRiotFlow = createMatchDetailsFlow.async
-
+      val parseResultsFlow = builder.add(Flow[GetMatches].map(parseResults).async)
 
       lastIdsFlow ~> lastIdsBroadcast ~> lastIdsSuccessFilter ~> detailsFromRiotFlow ~> merge
       lastIdsBroadcast ~> lastIdsFailedFilter ~> merge
+      merge ~> parseResultsFlow
 
-
-      FlowShape(lastIdsFlow.in, merge.out)
+      FlowShape(lastIdsFlow.in, parseResultsFlow.out)
     })
     source.via(lastIdsFlow).to(returnSink)
   }
@@ -85,10 +83,9 @@ class MatchHistoryManager extends LazyLogging {
     // Import the implicits so the ~> syntax can be used
     import GraphDSL.Implicits._
 
-    val mapIdsFlow = builder.add(Flow[GetMatches].map(mapMatchIds))
-    val detailsFromRiotFlow = builder.add(Flow[GetMatches].map(getDetailsFromRiot))
+    val mapIdsFlow = builder.add(Flow[GetMatches].map(mapMatchIds).async)
+    val detailsFromRiotFlow = builder.add(Flow[GetMatches].map(getDetailsFromRiot).async)
 
-    //TODO: Finish this, details get fetched now send them back
     mapIdsFlow ~> detailsFromRiotFlow
 
     FlowShape(mapIdsFlow.in, detailsFromRiotFlow.out)
@@ -102,14 +99,7 @@ class MatchHistoryManager extends LazyLogging {
   private def foundLastIds(data: GetMatches): Boolean = {
     data.lastIdsPromise.future.value match {
       case Some(Success(v)) => true
-      case Some(Failure(e)) =>
-        data.detailsPromise.failure(e)
-        false
-      case _ =>
-        val msg = "Could not determine status of last ID promise"
-        logger.error(msg)
-        data.detailsPromise.failure(new RuntimeException(msg))
-        false
+      case _ => false
     }
   }
 
@@ -129,9 +119,24 @@ class MatchHistoryManager extends LazyLogging {
         data.matchesMap = data.matchesMap.updated(matchId, Some(details))
       }
       else {
+        logger.error(s"Retrieving match details with id $matchId failed. Removing from details list.")
         data.matchesMap -= matchId
       }
     })
+    data
+  }
+
+  private def parseResults(data: GetMatches): GetMatches = {
+    data.lastIdsPromise.future.value match {
+      case Some(Success(v)) =>
+        data.detailsPromise.success(data.matchesMap.values.flatten.toSeq.sortBy(_.matchId))
+      case Some(Failure(e)) =>
+        data.detailsPromise.failure(e)
+      case _ =>
+        val msg = "Could not determine status of last ID promise"
+        logger.error(msg)
+        data.detailsPromise.failure(new RuntimeException(msg))
+    }
     data
   }
 
