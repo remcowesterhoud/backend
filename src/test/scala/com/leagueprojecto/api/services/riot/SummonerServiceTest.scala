@@ -16,9 +16,7 @@ class SummonerServiceTest extends TestClass with JsonProtocols {
 
   class TestSummonerService(httpResponse: HttpResponse) extends SummonerService {
     override def riotConnectionFlow(region: String, service: String, hostType: String): Flow[HttpRequest, HttpResponse, Any] = {
-      Flow[HttpRequest].map { _ =>
-        httpResponse
-      }
+      Flow[HttpRequest].map { _ => httpResponse }
     }
   }
 
