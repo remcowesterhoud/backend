@@ -5,6 +5,7 @@ import com.analyzedgg.api.domain.riot.Player
 import com.analyzedgg.api.services.MatchHistoryManager
 import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
 import com.analyzedgg.api.services.riot.TempMatchService
+import com.analyzedgg.api.services.riot.TempMatchService.FailedRetrievingRecentMatches
 import com.leagueprojecto.api.testHelpers.TestClass
 
 import scala.collection.mutable.ArrayBuffer
@@ -84,7 +85,7 @@ class MatchHistoryManagerTest extends TestClass {
     // Setup
     val manager = new TestMatchHistoryManager()
 
-    Given("10 matches have been played recently")
+    Given("3 matches have been played recently")
     val expectedMatches = ArrayBuffer[MatchDetail]()
     manager.service.getRecentMatchIds _ when(*, 10) onCall { (data: GetMatches, amount: Int) =>
       data.lastIdsPromise.success(Seq(1L, 2L, 3L))
@@ -97,7 +98,7 @@ class MatchHistoryManagerTest extends TestClass {
     }
     When("the match details are being retrieved")
     val actualMatches = manager.getMatchHistory(testRegion, testSummoner.id, "", "")
-    Then("the 10 latests match details should be returned")
+    Then("the 3 latest match details should be returned")
     actualMatches.length shouldEqual 3
     for (actualDetails <- actualMatches) {
       expectedMatches contains actualDetails shouldBe true
@@ -105,17 +106,78 @@ class MatchHistoryManagerTest extends TestClass {
   }
 
   it should "return an empty list if the summoner has played no matches" in {
+    // Setup
     val manager = new TestMatchHistoryManager()
 
-    Given("10 matches have been played recently")
+    Given("no matches have been played recently")
     manager.service.getRecentMatchIds _ when(*, 10) onCall { (data: GetMatches, amount: Int) =>
       data.lastIdsPromise.success(Seq())
       data
     }
     When("the match details are being retrieved")
     val actualMatches = manager.getMatchHistory(testRegion, testSummoner.id, "", "")
-    Then("the 10 latests match details should be returned")
-    actualMatches.length shouldEqual 0
+    Then("an empty list should be returned")
+    actualMatches.isEmpty shouldBe true
+  }
+
+  it should "remove matches that could not be retrieved from the recent matches list" in {
+    // Setup
+    val manager = new TestMatchHistoryManager()
+    val id = 1L
+
+    Given("a match has been played recently")
+    manager.service.getRecentMatchIds _ when(*, 10) onCall { (data: GetMatches, amount: Int) =>
+      data.lastIdsPromise.success(Seq(id))
+      data
+    }
+    And("the match details can not be retrieved from the Riot API")
+    manager.service.getMatchDetails _ when(testRegion, testSummoner.id, id) returns null
+    When("the match details are being retrieved")
+    val actualMatches = manager.getMatchHistory(testRegion, testSummoner.id, "", "")
+    Then("an empty list should be returned")
+    actualMatches.isEmpty shouldBe true
+  }
+
+  it should "throw a FailedRetrievingRecentMatches exception if the latest match ids can't be retrieved from the Riot API" in {
+    // Setup
+    val manager = new TestMatchHistoryManager()
+
+    Given("the summoner's last match ids can't be retrieved")
+    manager.service.getRecentMatchIds _ when(*, 10) onCall { (data: GetMatches, amount: Int) =>
+      data.lastIdsPromise.failure(FailedRetrievingRecentMatches)
+      data
+    }
+    When("the match details are being retrieved")
+    val exception = the[FailedRetrievingRecentMatches.type] thrownBy manager.getMatchHistory(testRegion, testSummoner.id, "", "")
+    Then("a FailedRetrievingRecentMatches exception should be thrown")
+    exception shouldEqual FailedRetrievingRecentMatches
+  }
+
+  it should "throw an exception if the Riot API is offline" in {
+    // Setup
+    val manager = new TestMatchHistoryManager()
+
+    Given("the summoner's last match ids can't be retrieved")
+    manager.service.getRecentMatchIds _ when(*, 10) onCall { (data: GetMatches, amount: Int) =>
+      data.lastIdsPromise.failure(new RuntimeException)
+      data
+    }
+    When("the match details are being retrieved")
+    val exception = the[RuntimeException] thrownBy manager.getMatchHistory(testRegion, testSummoner.id, "", "")
+    Then("an exception should be thrown")
+    exception.isInstanceOf[RuntimeException] shouldBe true
+  }
+
+  it should "throw an exception if some unknown exception occurs getting the recent match ids" in {
+    // Setup
+    val manager = new TestMatchHistoryManager()
+
+    Given("something goes completing the last ids promise while getting the recent match ids")
+    manager.service.getRecentMatchIds _ when(*, 10) onCall { (data: GetMatches, amount: Int) => data }
+    When("the match details are being retrieved")
+    val exception = the[RuntimeException] thrownBy manager.getMatchHistory(testRegion, testSummoner.id, "", "")
+    Then("an exception should be thrown")
+    exception.isInstanceOf[RuntimeException] shouldBe true
   }
 
 }

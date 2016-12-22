@@ -140,9 +140,9 @@ class MatchHistoryManager extends LazyLogging {
     data
   }
 
-  private def hasEmptyValues(mergedMatches: Map[Long, Option[MatchDetail]]): Boolean =
-    mergedMatches.values.exists(_.isEmpty)
-
-  private def getValues(mergedMatches: Map[Long, Option[MatchDetail]]): Seq[MatchDetail] =
-    mergedMatches.values.map(_.get).toSeq
+//  private def hasEmptyValues(mergedMatches: Map[Long, Option[MatchDetail]]): Boolean =
+//    mergedMatches.values.exists(_.isEmpty)
+//
+//  private def getValues(mergedMatches: Map[Long, Option[MatchDetail]]): Seq[MatchDetail] =
+//    mergedMatches.values.map(_.get).toSeq
 }
