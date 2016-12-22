@@ -7,12 +7,12 @@ import com.analyzedgg.api.JsonProtocols
 import com.analyzedgg.api.services.SummonerManager.GetSummoner
 import com.analyzedgg.api.services.riot.SummonerService
 import com.analyzedgg.api.services.riot.SummonerService.SummonerNotFound
-import org.scalatest.{FlatSpec, GivenWhenThen, Matchers}
+import com.leagueprojecto.api.testHelpers.TestClass
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
 
-class SummonerServiceTest extends FlatSpec with Matchers with GivenWhenThen with JsonProtocols {
+class SummonerServiceTest extends TestClass with JsonProtocols {
 
   class TestSummonerService(httpResponse: HttpResponse) extends SummonerService {
     override def riotConnectionFlow(region: String, service: String, hostType: String): Flow[HttpRequest, HttpResponse, Any] = {
