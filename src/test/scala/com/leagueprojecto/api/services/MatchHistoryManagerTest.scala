@@ -62,7 +62,7 @@ class MatchHistoryManagerTest extends TestClass {
 
     Given("10 matches have been played recently")
     val expectedMatches = ArrayBuffer[MatchDetail]()
-    manager.service.getRecentMatchIds _ when(*, *) onCall { (data: GetMatches, amount: Int) =>
+    manager.service.getRecentMatchIds _ when(*, 10) onCall { (data: GetMatches, amount: Int) =>
       data.lastIdsPromise.success(Seq(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L))
       data
     }
@@ -73,9 +73,49 @@ class MatchHistoryManagerTest extends TestClass {
     }
     When("the match details are being retrieved")
     val actualMatches = manager.getMatchHistory(testRegion, testSummoner.id, "", "")
-    Then("the 10 latests match details should be returned")
+    Then("the 10 latest match details should be returned")
+    actualMatches.length shouldEqual 10
     for (actualDetails <- actualMatches) {
       expectedMatches contains actualDetails shouldBe true
     }
   }
+
+  it should "retrieve less then 10 matches if the summoner did not play 10 matches yet" in {
+    // Setup
+    val manager = new TestMatchHistoryManager()
+
+    Given("10 matches have been played recently")
+    val expectedMatches = ArrayBuffer[MatchDetail]()
+    manager.service.getRecentMatchIds _ when(*, 10) onCall { (data: GetMatches, amount: Int) =>
+      data.lastIdsPromise.success(Seq(1L, 2L, 3L))
+      data
+    }
+    for (i <- 1L to 3L) {
+      val detail = createMockDetails(i)
+      expectedMatches.append(detail)
+      manager.service.getMatchDetails _ when(testRegion, testSummoner.id, i) returns detail
+    }
+    When("the match details are being retrieved")
+    val actualMatches = manager.getMatchHistory(testRegion, testSummoner.id, "", "")
+    Then("the 10 latests match details should be returned")
+    actualMatches.length shouldEqual 3
+    for (actualDetails <- actualMatches) {
+      expectedMatches contains actualDetails shouldBe true
+    }
+  }
+
+  it should "return an empty list if the summoner has played no matches" in {
+    val manager = new TestMatchHistoryManager()
+
+    Given("10 matches have been played recently")
+    manager.service.getRecentMatchIds _ when(*, 10) onCall { (data: GetMatches, amount: Int) =>
+      data.lastIdsPromise.success(Seq())
+      data
+    }
+    When("the match details are being retrieved")
+    val actualMatches = manager.getMatchHistory(testRegion, testSummoner.id, "", "")
+    Then("the 10 latests match details should be returned")
+    actualMatches.length shouldEqual 0
+  }
+
 }
