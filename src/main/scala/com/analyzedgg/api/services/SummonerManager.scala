@@ -51,12 +51,12 @@ class SummonerManager extends LazyLogging {
   private def createGraph() = {
     // This Sink doesn't need to do anything with the elements as the reference to the objects is being tracked till they complete the Stream
     val returnSink = Sink.ignore
+    // A Queue source allows for dynamically sending elements through the Stream
     val source = Source.queue[GetSummoner](100, OverflowStrategy.backpressure)
-
+    // A custom Flow is created which will collect the Summoner information from either the cache or the Riot API
     val getSummonerFlow = Flow.fromGraph(GraphDSL.create() { implicit builder =>
       // Import the implicits so the ~> syntax can be used
       import GraphDSL.Implicits._
-
       // Flows
       // Tries to retrieve the Summoner from the cache
       val fromCacheFlow = builder.add(Flow[GetSummoner].map(retrieveFromCache).async)
@@ -69,20 +69,19 @@ class SummonerManager extends LazyLogging {
       // Merges the different flows that should output to returnSink into a single flow
       val merge = builder.add(Merge[GetSummoner](2))
       // Filters out elements where the summoner doesn't exist in the cache so it doesn't get returned yet
-      val filterFlow = Flow[GetSummoner].filter(data => data.summonerPromise.isCompleted).async
-
+      val notCachedFilter = Flow[GetSummoner].filter(data => data.summonerPromise.isCompleted).async
       // Sinks
       // Caches the summoner in the database
       val cacheSink = Sink.foreach(cacheSummoner).async
 
+      // String the Flow together
       fromCacheFlow ~> cacheResultBroadcast ~> fromRiotFlow ~> riotResultBroadcast ~> cacheSink
-      cacheResultBroadcast ~> filterFlow ~> merge
-      riotResultBroadcast ~> merge
+                       cacheResultBroadcast ~> notCachedFilter ~>                     merge
+                                                               riotResultBroadcast ~> merge
 
       // The shape of this Graph is a Flow, meaning it has a single input and a single output.
       FlowShape(fromCacheFlow.in, merge.out)
     })
-
     // Connect the Source to the Flow to the Sink
     source.via(getSummonerFlow).to(returnSink)
   }
