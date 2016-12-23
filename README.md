@@ -1,7 +1,7 @@
 ### Production info
 [![Build Status](https://travis-ci.org/remcowesterhoud/backend.svg?branch=master)](https://travis-ci.org/remcowesterhoud/backend)
 [![Coverage Status](https://coveralls.io/repos/github/remcowesterhoud/backend/badge.svg?branch=master)](https://coveralls.io/github/remcowesterhoud/backend?branch=master)
-[![Codacy Badge](https://api.codacy.com/project/badge/Grade/f8c5b0c71cf142139b88aeafb09450c2?branch=master)](https://www.codacy.com/app/remcowesterhoud/backend?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=remcowesterhoud/backend&amp;utm_campaign=Badge_Grade)
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/f8c5b0c71cf142139b88aeafb09450c2)](https://www.codacy.com/app/remcowesterhoud/backend?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=remcowesterhoud/backend&amp;utm_campaign=Badge_Grade)
 
 ### Develop info
 [![Build Status](https://travis-ci.org/remcowesterhoud/backend.svg?branch=develop)](https://travis-ci.org/remcowesterhoud/backend)
