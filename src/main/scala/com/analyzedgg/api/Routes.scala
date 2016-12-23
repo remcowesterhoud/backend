@@ -26,8 +26,9 @@ trait Routes extends JsonProtocols {
 
   implicit val timeout: Timeout = Timeout(1.minute)
 
+  private val maxFailures = 5
   lazy val couchDbCircuitBreaker =
-    new CircuitBreaker(system.scheduler, maxFailures = 5, callTimeout = 5.seconds, resetTimeout = 1.minute)(executor)
+    new CircuitBreaker(system.scheduler, maxFailures, callTimeout = 5.seconds, resetTimeout = 1.minute)(executor)
 
   def config: Config
 
@@ -43,7 +44,7 @@ trait Routes extends JsonProtocols {
     }
   }
 
-  implicit def myExceptionHandler = ExceptionHandler {
+  protected implicit def myExceptionHandler = ExceptionHandler {
     case e: RiotService.ServiceNotAvailable => complete(HttpResponse(ServiceUnavailable))
     case e: RiotService.TooManyRequests => complete(HttpResponse(TooManyRequests))
     case SummonerService.SummonerNotFound => complete(HttpResponse(NotFound))
@@ -86,12 +87,6 @@ trait Routes extends JsonProtocols {
   def matchHistoryRoute(implicit region: String): Route = {
     pathPrefix("matchhistory" / LongNumber) { summonerId =>
       parameters("queue" ? "", "champions" ? "") { (queueParam: String, championParam: String) =>
-        var queueType = queueParam
-        if (!queueParam.matches(queueMatcher)) queueType = ""
-
-        var championList = championParam
-        if (!championParam.matches("^(\\d{1,3}|,*)*$")) championList = ""
-
         pathEndOrSingleSlash {
           get {
             complete {
