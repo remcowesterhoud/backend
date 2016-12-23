@@ -33,14 +33,14 @@ class MatchService extends FSM[State, Data] with ActorLogging with RiotService {
   when(Idle) {
     case Event(GetMatch(regionParam, summonerId, matchId), Empty) =>
       val origSender: ActorRef = sender()
-      //riotGetRequest(regionParam, matchById + matchId).pipeTo(self)
+      riotGetRequest(regionParam, matchById + matchId).pipeTo(self)
 
       goto(WaitingForRiotResponse) using RequestData(origSender, summonerId, matchId)
   }
 
   when(WaitingForRiotResponse) {
     case Event(HttpResponse(StatusCodes.OK, _, entity, _), data: RequestData) =>
-      //mapRiotTo(entity, classOf[RiotMatch]).pipeTo(self)
+      mapRiotTo(entity, classOf[RiotMatch]).pipeTo(self)
       goto(RiotRequestFinished) using data
     case Event(x, RequestData(origSender, _, matchId)) =>
       log.error(s"Something went wrong retrieving matches: $x")
