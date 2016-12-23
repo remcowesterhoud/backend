@@ -21,8 +21,8 @@ object MatchHistoryManager {
   def apply(): MatchHistoryManager = manager
 
   case class GetMatches(region: String, summonerId: Long, queueType: String, championList: String) {
-    var detailsPromise: Promise[Seq[MatchDetail]] = Promise()
-    var lastIdsPromise: Promise[Seq[Long]] = Promise()
+    val detailsPromise: Promise[Seq[MatchDetail]] = Promise()
+    val lastIdsPromise: Promise[Seq[Long]] = Promise()
     var matchesMap: Map[Long, Option[MatchDetail]] = _
 
     def result: Seq[MatchDetail] = Await.result(detailsPromise.future, 5.seconds)
@@ -31,8 +31,9 @@ object MatchHistoryManager {
 }
 
 class MatchHistoryManager extends LazyLogging {
+  private val maxFailures = 5
   lazy val couchDbCircuitBreaker =
-    new CircuitBreaker(system.scheduler, maxFailures = 5, callTimeout = 5.seconds, resetTimeout = 1.minute)
+    new CircuitBreaker(system.scheduler, maxFailures, callTimeout = 5.seconds, resetTimeout = 1.minute)
   implicit val executionContext: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
   val system = ActorSystem("match-system")
   val decider: Supervision.Decider = { e =>
@@ -44,8 +45,7 @@ class MatchHistoryManager extends LazyLogging {
   private final val matchAmount: Int = 10
 
   protected val service = new TempMatchService()
-  protected val repository = null
-  private val graph = createGraph.run()
+  private val graph = createGraph().run()
 
   def getMatchHistory(region: String, summonerId: Long, queueParam: String, championParam: String): Seq[MatchDetail] = {
     val getMatches = GetMatches(region, summonerId, queueParam, championParam)
@@ -53,10 +53,10 @@ class MatchHistoryManager extends LazyLogging {
     getMatches.result
   }
 
-  private def createGraph: RunnableGraph[SourceQueueWithComplete[GetMatches]] = {
+  private def createGraph(bufferSize: Int = 100): RunnableGraph[SourceQueueWithComplete[GetMatches]] = {
     // This Sink doesn't need to do anything with the elements as the reference to the objects is being tracked till they complete the Stream
     val returnSink = Sink.ignore
-    val source = Source.queue[GetMatches](100, OverflowStrategy.backpressure)
+    val source = Source.queue[GetMatches](bufferSize, OverflowStrategy.backpressure)
 
     val lastIdsFlow = Flow.fromGraph(GraphDSL.create() { implicit builder =>
       // Import the implicits so the ~> syntax can be used

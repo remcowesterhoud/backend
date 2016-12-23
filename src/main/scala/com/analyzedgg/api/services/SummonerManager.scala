@@ -28,8 +28,9 @@ object SummonerManager {
 }
 
 class SummonerManager extends LazyLogging {
+  private val maxFailures = 5
   lazy val couchDbCircuitBreaker =
-    new CircuitBreaker(system.scheduler, maxFailures = 5, callTimeout = 5.seconds, resetTimeout = 1.minute)
+    new CircuitBreaker(system.scheduler, maxFailures, callTimeout = 5.seconds, resetTimeout = 1.minute)
   implicit val executionContext: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
   val system = ActorSystem("summoner-system")
   val decider: Supervision.Decider = { e =>
@@ -40,7 +41,7 @@ class SummonerManager extends LazyLogging {
   implicit val materializer: ActorMaterializer = ActorMaterializer(materializerSettings)(system)
   protected val service = new SummonerService()
   protected val repository = new SummonerRepository(couchDbCircuitBreaker)
-  private val graph = createGraph.run()
+  private val graph = createGraph().run()
 
   def getSummoner(region: String, name: String): Summoner = {
     val getSummoner = GetSummoner(region, name)
@@ -48,11 +49,11 @@ class SummonerManager extends LazyLogging {
     getSummoner.result
   }
 
-  private def createGraph: RunnableGraph[SourceQueueWithComplete[GetSummoner]] = {
+  private def createGraph(bufferSize: Int = 100): RunnableGraph[SourceQueueWithComplete[GetSummoner]] = {
     // This Sink doesn't need to do anything with the elements as the reference to the objects is being tracked till they complete the Stream
     val returnSink = Sink.ignore
     // A Queue source allows for dynamically sending elements through the Stream
-    val source = Source.queue[GetSummoner](100, OverflowStrategy.backpressure)
+    val source = Source.queue[GetSummoner](bufferSize, OverflowStrategy.backpressure)
     // A custom Flow is created which will collect the Summoner information from either the cache or the Riot API
     val getSummonerFlow = Flow.fromGraph(GraphDSL.create() { implicit builder =>
       // Import the implicits so the ~> syntax can be used
