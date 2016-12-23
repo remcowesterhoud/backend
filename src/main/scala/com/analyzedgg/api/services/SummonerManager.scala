@@ -5,7 +5,7 @@ import java.util.concurrent.Executors
 import akka.actor.ActorSystem
 import akka.pattern.CircuitBreaker
 import akka.stream._
-import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Merge, Sink, Source}
+import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Merge, RunnableGraph, Sink, Source, SourceQueueWithComplete}
 import com.analyzedgg.api.domain.Summoner
 import com.analyzedgg.api.services.SummonerManager.GetSummoner
 import com.analyzedgg.api.services.couchdb.SummonerRepository
@@ -31,7 +31,7 @@ class SummonerManager extends LazyLogging {
   lazy val couchDbCircuitBreaker =
     new CircuitBreaker(system.scheduler, maxFailures = 5, callTimeout = 5.seconds, resetTimeout = 1.minute)
   implicit val executionContext: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
-  val system = ActorSystem("system")
+  val system = ActorSystem("summoner-system")
   val decider: Supervision.Decider = { e =>
     logger.warn(e.getMessage)
     Supervision.Resume
@@ -40,7 +40,7 @@ class SummonerManager extends LazyLogging {
   implicit val materializer: ActorMaterializer = ActorMaterializer(materializerSettings)(system)
   protected val service = new SummonerService()
   protected val repository = new SummonerRepository(couchDbCircuitBreaker)
-  private val graph = createGraph().run()
+  private val graph = createGraph.run()
 
   def getSummoner(region: String, name: String): Summoner = {
     val getSummoner = GetSummoner(region, name)
@@ -48,7 +48,7 @@ class SummonerManager extends LazyLogging {
     getSummoner.result
   }
 
-  private def createGraph() = {
+  private def createGraph: RunnableGraph[SourceQueueWithComplete[GetSummoner]] = {
     // This Sink doesn't need to do anything with the elements as the reference to the objects is being tracked till they complete the Stream
     val returnSink = Sink.ignore
     val source = Source.queue[GetSummoner](100, OverflowStrategy.backpressure)
