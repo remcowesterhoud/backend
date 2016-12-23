@@ -7,10 +7,9 @@ import com.analyzedgg.api.services.SummonerManager.GetSummoner
 import com.analyzedgg.api.services.couchdb.SummonerRepository
 import com.analyzedgg.api.services.riot.SummonerService
 import com.analyzedgg.api.services.riot.SummonerService.SummonerNotFound
-import org.scalamock.scalatest.MockFactory
-import org.scalatest.{FlatSpec, GivenWhenThen, Matchers}
+import com.leagueprojecto.api.testHelpers.TestClass
 
-class SummonerManagerTest extends FlatSpec with Matchers with GivenWhenThen with MockFactory {
+class SummonerManagerTest extends TestClass {
   val testSummoner = Summoner(123123123, "Wagglez", 100, 1434315156000L, 30)
   val testRiotSummoner = RiotSummoner(testSummoner)
 
@@ -63,44 +62,44 @@ class SummonerManagerTest extends FlatSpec with Matchers with GivenWhenThen with
     manager.repository.save _ verify(testSummoner, region) once()
   }
 
-    it should "should throw a SummonerNotFound exception if the summoner is invalid" in {
-      // Setup
-      val region = "euw"
-      val name = "invalid"
-      val manager = new TestSummonerManager()
+  it should "should throw a SummonerNotFound exception if the summoner is invalid" in {
+    // Setup
+    val region = "euw"
+    val name = "invalid"
+    val manager = new TestSummonerManager()
 
-      Given("the requested summoner is invalid")
-      manager.repository.getByName _ when(region, name) returns null
-      manager.service.getByName _ when * onCall { x: GetSummoner =>
-        x.summonerPromise.failure(SummonerNotFound)
-        x
-      }
-      When("a summoner is being retrieved")
-      val exception = the[SummonerNotFound.type] thrownBy manager.getSummoner(region, name)
-      Then("the cache should be checked for the summoner")
-      manager.repository.getByName _ verify(region, name) once()
-      And("a SummonerNotFound exception should be thrown")
-      exception shouldEqual SummonerNotFound
+    Given("the requested summoner is invalid")
+    manager.repository.getByName _ when(region, name) returns null
+    manager.service.getByName _ when * onCall { x: GetSummoner =>
+      x.summonerPromise.failure(SummonerNotFound)
+      x
     }
+    When("a summoner is being retrieved")
+    val exception = the[SummonerNotFound.type] thrownBy manager.getSummoner(region, name)
+    Then("the cache should be checked for the summoner")
+    manager.repository.getByName _ verify(region, name) once()
+    And("a SummonerNotFound exception should be thrown")
+    exception shouldEqual SummonerNotFound
+  }
 
-    it should "throw an exception when the riot api is offline" in {
-      // Setup
-      val region = "euw"
-      val name = "offline"
-      val manager = new TestSummonerManager()
+  it should "throw an exception when the riot api is offline" in {
+    // Setup
+    val region = "euw"
+    val name = "offline"
+    val manager = new TestSummonerManager()
 
-      Given("the riot api is offline")
-      manager.service.getByName _ when * onCall { x: GetSummoner =>
-        x.summonerPromise.failure(new RuntimeException)
-        x
-      }
-      And("the summoner does not exist in the cache")
-      manager.repository.getByName _ when(region, name) returns null
-      When("a summoner is being retrieved")
-      val exception = the[RuntimeException] thrownBy manager.getSummoner(region, name)
-      Then("the cache should be checked fro the summoner")
-      manager.repository.getByName _ verify(region, name) once()
-      And("a RunTimeException should be thrown")
-      exception.isInstanceOf[RuntimeException] shouldBe true
+    Given("the riot api is offline")
+    manager.service.getByName _ when * onCall { x: GetSummoner =>
+      x.summonerPromise.failure(new RuntimeException)
+      x
     }
+    And("the summoner does not exist in the cache")
+    manager.repository.getByName _ when(region, name) returns null
+    When("a summoner is being retrieved")
+    val exception = the[RuntimeException] thrownBy manager.getSummoner(region, name)
+    Then("the cache should be checked fro the summoner")
+    manager.repository.getByName _ verify(region, name) once()
+    And("a RunTimeException should be thrown")
+    exception.isInstanceOf[RuntimeException] shouldBe true
+  }
 }
