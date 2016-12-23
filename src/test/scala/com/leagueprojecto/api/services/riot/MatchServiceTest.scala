@@ -8,8 +8,12 @@ import com.analyzedgg.api.domain.riot._
 import com.analyzedgg.api.domain.{MatchDetail, PlayerStats, Team, Teams}
 import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
 import com.analyzedgg.api.services.riot.TempMatchService
+import com.analyzedgg.api.services.riot.TempMatchService.FailedRetrievingRecentMatches
 import com.leagueprojecto.api.testHelpers.TestClass
 import spray.json._
+
+import scala.concurrent.Await
+import scala.concurrent.duration._
 
 
 class MatchServiceTest extends TestClass with JsonProtocols {
@@ -43,8 +47,56 @@ class MatchServiceTest extends TestClass with JsonProtocols {
     val service = new TestMatchService(response)
     When("invalid MatchDetails are requested")
     val result = service.getMatchDetails("invalid", summonerId, matchId)
-    Then("an null should be returned")
+    Then("null should be returned")
     result shouldBe null
+  }
+
+  it should "get a list of match ids" in {
+    // Setup
+    // TODO: Mapping doesnt work
+    //    val expectedIds = Seq(1L, 2L, 3L, 4L, 5L)
+    //    val entity = RiotRecentMatches(Seq(RecentMatch(expectedIds.head),
+    //      RecentMatch(expectedIds(1)),
+    //      RecentMatch(expectedIds(2)),
+    //      RecentMatch(expectedIds(3)),
+    //      RecentMatch(expectedIds.last))
+    //    )
+    //    val getMatchesRequest = GetMatches(region, summonerId, "", "")
+    //    Given("a summoner has played matches recently")
+    //    val response = HttpResponse(status = OK, entity = entity.toString)
+    //    val service = new TestMatchService(response)
+    //    When("the latest match ids are being fetched")
+    //    val result = service.getRecentMatchIds(getMatchesRequest, 10)
+    //    Then("the request promise should contain a list of match ids")
+    //    val actualIds = Await.result(result.lastIdsPromise.future, 3.seconds)
+    //    actualIds shouldEqual expectedIds
+  }
+
+  it should "fail the promise with a FailedRetrievingRecentMatches exception" in {
+    //     Setup
+    val getMatchesRequest = GetMatches(region, summonerId, "", "")
+    Given("a summoner has played matches recently")
+    val response = HttpResponse(status = NotFound)
+    val service = new TestMatchService(response)
+    When("the latest match ids are being fetched")
+    val result = service.getRecentMatchIds(getMatchesRequest, 10)
+    Then("the request promise should contain a list of match ids")
+    val exception = the[FailedRetrievingRecentMatches.type] thrownBy Await.result(result.lastIdsPromise.future, 3.seconds)
+    exception shouldEqual FailedRetrievingRecentMatches
+  }
+
+  it should "fail the promise with a RuntimeException" in {
+    //     Setup
+    val getMatchesRequest = GetMatches(region, summonerId, "", "")
+    Given("a summoner has played matches recently")
+    val response = HttpResponse(status = InternalServerError)
+    val service = new TestMatchService(response)
+    When("the latest match ids are being fetched")
+    val result = service.getRecentMatchIds(getMatchesRequest, 10)
+    Then("the request promise should contain a list of match ids")
+    val exception = the[RuntimeException] thrownBy Await.result(result.lastIdsPromise.future, 3.seconds)
+    exception.isInstanceOf[RuntimeException] shouldBe true
+    exception.getMessage.contains("An unknown error occurred").shouldBe(true)
   }
 
   val region = "euw"
