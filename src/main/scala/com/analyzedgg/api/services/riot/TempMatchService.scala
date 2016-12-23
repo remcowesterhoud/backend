@@ -1,5 +1,7 @@
 package com.analyzedgg.api.services.riot
 
+import akka.http.scaladsl.model.StatusCodes.OK
+import akka.http.scaladsl.model.StatusCodes.NotFound
 import com.analyzedgg.api.domain.riot._
 import com.analyzedgg.api.domain.{MatchDetail, PlayerStats, Team, Teams}
 import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
@@ -19,11 +21,11 @@ case class TempMatchService() extends RiotService with LazyLogging {
   def getRecentMatchIds(data: GetMatches, amount: Int): GetMatches = {
     val queryParams: Map[String, String] = Map("beginIndex" -> 0.toString, "endIndex" -> amount.toString)
     val response = Await.result(riotGetRequest(data.region, matchListBySummonerId + data.summonerId, queryParams), 5.seconds)
-    response.status.intValue() match {
-      case 200 =>
+    response.status match {
+      case OK =>
         val recentMatchList = Await.result(mapRiotTo(response.entity, classOf[RiotRecentMatches]), 5.seconds)
         data.lastIdsPromise.success(recentMatchList.matches.map(_.matchId))
-      case 404 => data.lastIdsPromise.failure(FailedRetrievingRecentMatches)
+      case NotFound => data.lastIdsPromise.failure(FailedRetrievingRecentMatches)
       case _ => data.lastIdsPromise.failure(new RuntimeException(s"An unknown error occurred. Riot API response:\n$response"))
     }
     data
@@ -32,8 +34,8 @@ case class TempMatchService() extends RiotService with LazyLogging {
 
   def getMatchDetails(region: String, summonerId: Long, matchId: Long): MatchDetail = {
     val response = Await.result(riotGetRequest(region, matchById + matchId), 5.seconds)
-    response.status.intValue() match {
-      case 200 => toMatchDetail(Await.result(mapRiotTo(response.entity, classOf[RiotMatch]), 5.seconds), summonerId)
+    response.status match {
+      case OK => toMatchDetail(Await.result(mapRiotTo(response.entity, classOf[RiotMatch]), 5.seconds), summonerId)
       case _ =>
         logger.error(s"Failed retrieving match details.\nReason: $response")
         null
@@ -43,9 +45,10 @@ case class TempMatchService() extends RiotService with LazyLogging {
   private[this] def toMatchDetail(riotMatch: RiotMatch, summonerId: Long): MatchDetail = {
     val participantIdentity = riotMatch.participantIdentities.filter(_.player.summonerId == summonerId).head
     val participant = riotMatch.participants.filter(_.participantId == participantIdentity.participantId).head
-
-    val blue: Seq[Player] = getPlayersFromTeam(riotMatch.participants, riotMatch.participantIdentities, 100)
-    val red: Seq[Player] = getPlayersFromTeam(riotMatch.participants, riotMatch.participantIdentities, 200)
+    val blueId = 100
+    val redId = 200
+    val blue: Seq[Player] = getPlayersFromTeam(riotMatch.participants, riotMatch.participantIdentities, blueId)
+    val red: Seq[Player] = getPlayersFromTeam(riotMatch.participants, riotMatch.participantIdentities, redId)
 
     MatchDetail(
       riotMatch.matchId,
