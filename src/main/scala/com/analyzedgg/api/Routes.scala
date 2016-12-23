@@ -11,7 +11,7 @@ import akka.http.scaladsl.server.{ExceptionHandler, Route}
 import akka.pattern.{CircuitBreaker, ask}
 import akka.util.Timeout
 import com.analyzedgg.api.services.riot.ChampionService.GetChampions
-import com.analyzedgg.api.services.riot.{ChampionService, RiotService, SummonerService}
+import com.analyzedgg.api.services.riot.{ChampionService, RiotService, SummonerService, TempMatchService}
 import com.analyzedgg.api.services.{MatchHistoryManager, SummonerManager}
 import com.typesafe.config.Config
 
@@ -26,8 +26,9 @@ trait Routes extends JsonProtocols {
 
   implicit val timeout: Timeout = Timeout(1.minute)
 
+  private val maxFailures = 5
   lazy val couchDbCircuitBreaker =
-    new CircuitBreaker(system.scheduler, maxFailures = 5, callTimeout = 5.seconds, resetTimeout = 1.minute)(executor)
+    new CircuitBreaker(system.scheduler, maxFailures, callTimeout = 5.seconds, resetTimeout = 1.minute)(executor)
 
   def config: Config
 
@@ -43,11 +44,11 @@ trait Routes extends JsonProtocols {
     }
   }
 
-  implicit def myExceptionHandler = ExceptionHandler {
+  protected implicit def myExceptionHandler = ExceptionHandler {
     case e: RiotService.ServiceNotAvailable => complete(HttpResponse(ServiceUnavailable))
     case e: RiotService.TooManyRequests => complete(HttpResponse(TooManyRequests))
     case SummonerService.SummonerNotFound => complete(HttpResponse(NotFound))
-    //    case RecentMatchesService.FailedRetrievingRecentMatches |
+    case TempMatchService.FailedRetrievingRecentMatches => complete(HttpResponse(ServiceUnavailable))
     //         ChampionService.FailedRetrievingChampions |
     //         SummonerService.FailedRetrievingSummoner => complete(HttpResponse(ServiceUnavailable))
     case _ => complete(HttpResponse(InternalServerError))
@@ -86,18 +87,10 @@ trait Routes extends JsonProtocols {
   def matchHistoryRoute(implicit region: String): Route = {
     pathPrefix("matchhistory" / LongNumber) { summonerId =>
       parameters("queue" ? "", "champions" ? "") { (queueParam: String, championParam: String) =>
-        var queueType = queueParam
-        if (!queueParam.matches(queueMatcher)) queueType = ""
-
-        var championList = championParam
-        if (!championParam.matches("^(\\d{1,3}|,*)*$")) championList = ""
-
         pathEndOrSingleSlash {
           get {
             complete {
-              val matchHistoryManager = createMatchHistoryActor
-              val future = matchHistoryManager ? MatchHistoryManager.GetMatches(region, summonerId, queueParam, championParam)
-              future.mapTo[MatchHistoryManager.Result].map(_.data)
+              getMatchHistoryManager.getMatchHistory(region, summonerId, queueParam, championParam)
             }
           } ~ optionsSupport
         }
@@ -121,6 +114,5 @@ trait Routes extends JsonProtocols {
 
   protected[Routes] def getSummonerManager: SummonerManager = SummonerManager()
 
-  protected[Routes] def createMatchHistoryActor: ActorRef = system.actorOf(MatchHistoryManager.props(couchDbCircuitBreaker))
-
+  protected[Routes] def getMatchHistoryManager: MatchHistoryManager = MatchHistoryManager()
 }

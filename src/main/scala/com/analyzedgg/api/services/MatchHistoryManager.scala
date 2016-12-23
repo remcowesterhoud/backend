@@ -1,140 +1,148 @@
 package com.analyzedgg.api.services
 
-import akka.actor.{ActorLogging, ActorRef, FSM, Props}
-import akka.actor.Status.Failure
+import java.util.concurrent.Executors
+
+import akka.actor.ActorSystem
 import akka.pattern.CircuitBreaker
+import akka.stream._
+import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Merge, RunnableGraph, Sink, Source, SourceQueueWithComplete}
 import com.analyzedgg.api.domain.MatchDetail
-import com.analyzedgg.api.domain.riot.RiotRecentMatches
-import com.analyzedgg.api.services.MatchHistoryManager.{State, StateData}
-import com.analyzedgg.api.services.couchdb.DatabaseService
-import com.analyzedgg.api.services.couchdb.DatabaseService.{MatchesResult, MatchesSaved, NoResult, SaveMatches}
-import com.analyzedgg.api.services.riot.RecentMatchesService
+import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
+import com.analyzedgg.api.services.riot.TempMatchService
+import com.typesafe.scalalogging.LazyLogging
 
 import scala.concurrent.duration._
+import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Promise}
+import scala.util.{Failure, Success}
 
 object MatchHistoryManager {
+  private val manager: MatchHistoryManager = new MatchHistoryManager()
 
-  sealed trait State
-  case object Idle extends State
-  case object RetrievingRecentMatchIdsFromRiot extends State
-  case object RetrievingFromDb extends State
-  case object RetrievingFromRiot extends State
-  case object PersistingToDb extends State
+  def apply(): MatchHistoryManager = manager
 
-  case class GetMatches(region: String, summonerId: Long, queueType: String, championList: String)
+  case class GetMatches(region: String, summonerId: Long, queueType: String, championList: String) {
+    val detailsPromise: Promise[Seq[MatchDetail]] = Promise()
+    val lastIdsPromise: Promise[Seq[Long]] = Promise()
+    var matchesMap: Map[Long, Option[MatchDetail]] = _
 
-  case class RequestData(sender: ActorRef, getMatches: GetMatches)
+    def result: Seq[MatchDetail] = Await.result(detailsPromise.future, 5.seconds)
+  }
 
-  case class StateData(requestData: Option[RequestData], matches: Map[Long, Option[MatchDetail]])
-
-  case class Result(data: Seq[MatchDetail])
-
-  def props(couchDbCircuitBreaker: CircuitBreaker) = Props(new MatchHistoryManager(couchDbCircuitBreaker))
 }
 
-class MatchHistoryManager(couchDbCircuitBreaker: CircuitBreaker) extends FSM[State, StateData] with ActorLogging {
+class MatchHistoryManager extends LazyLogging {
+  private val maxFailures = 5
+  lazy val couchDbCircuitBreaker =
+    new CircuitBreaker(system.scheduler, maxFailures, callTimeout = 5.seconds, resetTimeout = 1.minute)
+  implicit val executionContext: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
+  val system = ActorSystem("match-system")
+  val decider: Supervision.Decider = { e =>
+    logger.warn(e.getMessage)
+    Supervision.Resume
+  }
+  val materializerSettings: ActorMaterializerSettings = ActorMaterializerSettings(system).withSupervisionStrategy(decider)
+  implicit val materializer: ActorMaterializer = ActorMaterializer(materializerSettings)(system)
+  private final val matchAmount: Int = 10
 
-  import MatchHistoryManager._
+  protected val service = new TempMatchService()
+  private val graph = createGraph().run()
 
-  val dbService: ActorRef = context.actorOf(DatabaseService.props(couchDbCircuitBreaker), "dbService")
-
-  startWith(Idle, StateData(None, Map.empty))
-
-  when(Idle) {
-    case Event(msg: GetMatches, state) =>
-      goto(RetrievingRecentMatchIdsFromRiot) using state.copy(requestData = Some(RequestData(sender(), msg)))
+  def getMatchHistory(region: String, summonerId: Long, queueParam: String, championParam: String): Seq[MatchDetail] = {
+    val getMatches = GetMatches(region, summonerId, queueParam, championParam)
+    graph.offer(getMatches)
+    getMatches.result
   }
 
-  when(RetrievingRecentMatchIdsFromRiot) {
-    case Event(RecentMatchesService.Result(matchIds), StateData(Some(RequestData(sender, _)), _)) if matchIds.isEmpty =>
-      // In case there are no match ids, return an empty MatchHistory Seq back to the sender.
-      sender ! Result(Seq.empty[MatchDetail])
-      stop()
-    case Event(RecentMatchesService.Result(matchIds), state) =>
-      // create the empty matchesMap which are to be filled by either the Db or Riot
-      val matchesMap = matchIds.map(m => m -> None).toMap
-      goto(RetrievingFromDb) using state.copy(matches = matchesMap)
-    case Event(e @ RecentMatchesService.FailedRetrievingRecentMatches, StateData(Some(RequestData(sender, _)), _)) =>
-      sender ! Failure(e)
-      stop()
+  private def createGraph(bufferSize: Int = 100): RunnableGraph[SourceQueueWithComplete[GetMatches]] = {
+    // This Sink doesn't need to do anything with the elements as the reference to the objects is being tracked till they complete the Stream
+    val returnSink = Sink.ignore
+    val source = Source.queue[GetMatches](bufferSize, OverflowStrategy.backpressure)
+
+    val lastIdsFlow = Flow.fromGraph(GraphDSL.create() { implicit builder =>
+      // Import the implicits so the ~> syntax can be used
+      import GraphDSL.Implicits._
+
+      val lastIdsFlow = builder.add(Flow[GetMatches].map(getLastIds).async)
+      val lastIdsBroadcast = builder.add(Broadcast[GetMatches](2))
+      val lastIdsFailedFilter = Flow[GetMatches].filter(data => !foundLastIds(data)).async
+      val lastIdsSuccessFilter = Flow[GetMatches].filter(data => foundLastIds(data)).async
+      val merge = builder.add(Merge[GetMatches](2))
+      val detailsFromRiotFlow = createMatchDetailsFlow.async
+      val parseResultsFlow = builder.add(Flow[GetMatches].map(parseResults).async)
+
+      lastIdsFlow ~> lastIdsBroadcast ~> lastIdsSuccessFilter ~> detailsFromRiotFlow ~> merge
+      lastIdsBroadcast ~> lastIdsFailedFilter ~> merge
+      merge ~> parseResultsFlow
+
+      FlowShape(lastIdsFlow.in, parseResultsFlow.out)
+    })
+    source.via(lastIdsFlow).to(returnSink)
   }
 
-  when(RetrievingFromDb) {
-    case Event(MatchesResult(matchDetails), StateData(Some(RequestData(sender, msg)), matches)) =>
-      val mergedMatches = matches ++ matchDetails.map(m => m.matchId -> Some(m))
+  private def createMatchDetailsFlow = Flow.fromGraph(GraphDSL.create() { implicit builder =>
+    // Import the implicits so the ~> syntax can be used
+    import GraphDSL.Implicits._
 
-      if (!hasEmptyValues(mergedMatches)) {
-        log.debug("Returning matches from RIOT")
-        sender ! Result(getValues(mergedMatches).sortBy(_.matchId))
-        stop()
-      } else {
-        goto(RetrievingFromRiot) using StateData(Some(RequestData(sender, msg)), mergedMatches)
+    val mapIdsFlow = builder.add(Flow[GetMatches].map(mapMatchIds).async)
+    val detailsFromRiotFlow = builder.add(Flow[GetMatches].map(getDetailsFromRiot).async)
+
+    mapIdsFlow ~> detailsFromRiotFlow
+
+    FlowShape(mapIdsFlow.in, detailsFromRiotFlow.out)
+  })
+
+  private def getLastIds(data: GetMatches): GetMatches = {
+    logger.info(s"Requesting last $matchAmount match ids from riot")
+    service.getRecentMatchIds(data, matchAmount)
+  }
+
+  private def foundLastIds(data: GetMatches): Boolean = {
+    data.lastIdsPromise.future.value match {
+      case Some(Success(v)) => true
+      case _ => false
+    }
+  }
+
+  private def mapMatchIds(data: GetMatches) = {
+    val ids: Seq[Long] = Await.result(data.lastIdsPromise.future, 5.seconds)
+    data.matchesMap = ids.map(id => id -> None).toMap
+    data
+  }
+
+  private def getDetailsFromRiot(data: GetMatches): GetMatches = {
+    val matchesToRetrieve = data.matchesMap.filter(m => m._2.isEmpty).keys
+    logger.info(s"going to get matches: [$matchesToRetrieve] from riot")
+    // TODO: Retrieve and map the matches in parallel
+    matchesToRetrieve.foreach(matchId => {
+      val details = service.getMatchDetails(data.region, data.summonerId, matchId)
+      if (details != null) {
+        data.matchesMap = data.matchesMap.updated(matchId, Some(details))
       }
-
-    case Event(NoResult, StateData(Some(RequestData(sender, msg)), matches)) =>
-      goto(RetrievingFromRiot) using StateData(Some(RequestData(sender, msg)), matches)
-  }
-
-  when(RetrievingFromRiot) {
-    case Event(MatchCombiner.Result(matchDetails), StateData(Some(RequestData(sender, msg@GetMatches(region, summonerId, _, _))), matches)) =>
-
-      // Insert the new matchDetails into the database
-      dbService ! SaveMatches(region, summonerId, matchDetails)
-
-      val mergedMatches = matches ++ matchDetails.map(m => m.matchId -> Some(m))
-      val mergedMatchesSeq = mergedMatches.values.flatten.toSeq
-      sender ! Result(mergedMatchesSeq.sortBy(_.matchId))
-      log.debug("Returning merged matches from RIOT")
-      goto(PersistingToDb) using StateData(Some(RequestData(sender, msg)), mergedMatches)
-  }
-
-  when(PersistingToDb, stateTimeout = 10.seconds) {
-    case Event(MatchesSaved, _) =>
-      log.info("Matches were saved correctly, stopping actor")
-      stop()
-    case _ =>
-      stop()
-  }
-
-  onTransition {
-    case Idle -> RetrievingRecentMatchIdsFromRiot =>
-      nextStateData match {
-        case StateData(Some(RequestData(_, GetMatches(region, summonerId, queueType, championList))), _) =>
-          log.info("Requesting last 20 match ids from Riot")
-          val recentMatchesActor = context.actorOf(RecentMatchesService.props)
-          recentMatchesActor ! RecentMatchesService.GetRecentMatchIds(region, summonerId, queueType, championList, 20)
-        case failData =>
-          log.error(s"Something went wrong when going from Idle -> RetrievingRecentMatchIdsFromRiot, got data: $failData")
+      else {
+        logger.error(s"Retrieving match details with id $matchId failed. Removing from details list.")
+        data.matchesMap -= matchId
       }
-
-    case RetrievingRecentMatchIdsFromRiot -> RetrievingFromDb =>
-      nextStateData match {
-        case StateData(Some(RequestData(_, GetMatches(region, summonerId, queueType, championList))), matches) =>
-          dbService ! DatabaseService.GetMatches(region, summonerId, matches.keys.toSeq)
-        case failData =>
-          log.error(s"Something went wrong when going from RetrievingRecentMatchIdsFromRiot -> RetrievingFromDb, got data: $failData")
-      }
-
-    case RetrievingFromDb -> RetrievingFromRiot =>
-      nextStateData match {
-        case StateData(Some(RequestData(_, GetMatches(region, summonerId, _, _))), matches) =>
-          val matchesToRetrieve = matches.filter(_._2.isEmpty).keys
-          log.info(s"going to get matches: [$matchesToRetrieve] from riot")
-          val matchesActor = context.actorOf(MatchCombiner.props, "matchesActor")
-          matchesActor ! MatchCombiner.GetMatches(region, summonerId, matchesToRetrieve.toSeq)
-      }
+    })
+    data
   }
 
-  whenUnhandled {
-    case Event(msg, StateData(Some(RequestData(sender, _)), _)) =>
-      log.error(s"Got unhandled message ($msg) in $stateName")
-      sender ! Failure(new IllegalStateException())
-      stop()
+  private def parseResults(data: GetMatches): GetMatches = {
+    data.lastIdsPromise.future.value match {
+      case Some(Success(v)) =>
+        data.detailsPromise.success(data.matchesMap.values.flatten.toSeq.sortBy(_.matchId))
+      case Some(Failure(e)) =>
+        data.detailsPromise.failure(e)
+      case _ =>
+        val msg = "Could not determine status of last ID promise"
+        logger.error(msg)
+        data.detailsPromise.failure(new RuntimeException(msg))
+    }
+    data
   }
 
-  private def hasEmptyValues(mergedMatches: Map[Long, Option[MatchDetail]]): Boolean =
-    mergedMatches.values.exists(_.isEmpty)
-
-  private def getValues(mergedMatches: Map[Long, Option[MatchDetail]]): Seq[MatchDetail] =
-    mergedMatches.values.map(_.get).toSeq
+//  private def hasEmptyValues(mergedMatches: Map[Long, Option[MatchDetail]]): Boolean =
+//    mergedMatches.values.exists(_.isEmpty)
+//
+//  private def getValues(mergedMatches: Map[Long, Option[MatchDetail]]): Seq[MatchDetail] =
+//    mergedMatches.values.map(_.get).toSeq
 }
