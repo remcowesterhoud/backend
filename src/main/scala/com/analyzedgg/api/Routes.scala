@@ -10,6 +10,7 @@ import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.{ExceptionHandler, Route}
 import akka.pattern.{CircuitBreaker, ask}
 import akka.util.Timeout
+import com.analyzedgg.api.domain.Summoner
 import com.analyzedgg.api.services.riot.ChampionService.GetChampions
 import com.analyzedgg.api.services.riot.{ChampionService, RiotService, SummonerService, TempMatchService}
 import com.analyzedgg.api.services.{MatchHistoryManager, SummonerManager}
@@ -45,7 +46,6 @@ trait Routes extends JsonProtocols {
   }
 
   protected implicit def myExceptionHandler = ExceptionHandler {
-    case e: RiotService.ServiceNotAvailable => complete(HttpResponse(ServiceUnavailable))
     case e: RiotService.TooManyRequests => complete(HttpResponse(TooManyRequests))
     case SummonerService.SummonerNotFound => complete(HttpResponse(NotFound))
     case TempMatchService.FailedRetrievingRecentMatches => complete(HttpResponse(ServiceUnavailable))
@@ -77,7 +77,8 @@ trait Routes extends JsonProtocols {
       pathEndOrSingleSlash {
         get {
           complete {
-            getSummonerManager.getSummoner(region, name)
+            val future = getSummonerManager.getSummoner(region, name)
+            future.mapTo[Summoner]
           }
         } ~ optionsSupport
       }

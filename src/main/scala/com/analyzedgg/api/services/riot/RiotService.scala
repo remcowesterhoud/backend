@@ -52,7 +52,6 @@ trait RiotService extends LazyLogging {
 
     logger.debug(s"endpoint host: $host")
 
-
     if (config.getBoolean("riot.api.tls")) {
       Http(system).outgoingConnectionHttps(host, port)
     } else {
