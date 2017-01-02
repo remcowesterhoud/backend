@@ -9,6 +9,10 @@ import com.analyzedgg.api.services.riot.SummonerService
 import com.analyzedgg.api.services.riot.SummonerService.SummonerNotFound
 import com.leagueprojecto.api.testHelpers.TestClass
 
+import scala.concurrent.Await
+import scala.concurrent.duration._
+import scala.util.{Failure, Success}
+
 class SummonerManagerTest extends TestClass {
   val testSummoner = Summoner(123123123, "Wagglez", 100, 1434315156000L, 30)
   val testRiotSummoner = RiotSummoner(testSummoner)
@@ -31,7 +35,8 @@ class SummonerManagerTest extends TestClass {
     When("a summoner is being retrieved")
     val response = manager.getSummoner(region, name)
     Then("the expected summoner from the cache should be returned")
-    response shouldEqual testSummoner
+    val summoner = Await.result(response, 5.seconds)
+    summoner shouldEqual testSummoner
     And("no call to the Riot api should be made")
     manager.service.getByName _ verify * never()
   }
@@ -57,7 +62,8 @@ class SummonerManagerTest extends TestClass {
     Then("the cache should be checked for the summoner")
     manager.repository.getByName _ verify(region, name) once()
     And("the expected summoner should be returned")
-    response shouldEqual testSummoner
+    val summoner = Await.result(response, 5.seconds)
+    summoner shouldEqual testSummoner
     And("the summoner should be cached")
     manager.repository.save _ verify(testSummoner, region) once()
   }
@@ -75,7 +81,8 @@ class SummonerManagerTest extends TestClass {
       x
     }
     When("a summoner is being retrieved")
-    val exception = the[SummonerNotFound.type] thrownBy manager.getSummoner(region, name)
+    val response = manager.getSummoner(region, name)
+    val exception = the[SummonerNotFound.type] thrownBy Await.result(response, 5.seconds)
     Then("the cache should be checked for the summoner")
     manager.repository.getByName _ verify(region, name) once()
     And("a SummonerNotFound exception should be thrown")
@@ -96,7 +103,8 @@ class SummonerManagerTest extends TestClass {
     And("the summoner does not exist in the cache")
     manager.repository.getByName _ when(region, name) returns null
     When("a summoner is being retrieved")
-    val exception = the[RuntimeException] thrownBy manager.getSummoner(region, name)
+    val response = manager.getSummoner(region, name)
+    val exception = the[RuntimeException] thrownBy Await.result(response, 5.seconds)
     Then("the cache should be checked fro the summoner")
     manager.repository.getByName _ verify(region, name) once()
     And("a RunTimeException should be thrown")

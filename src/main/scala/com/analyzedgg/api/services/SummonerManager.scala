@@ -22,7 +22,7 @@ object SummonerManager {
   def apply(): SummonerManager = manager
 
   case class GetSummoner(region: String, name: String, var summonerPromise: Promise[Summoner] = Promise[Summoner]()) {
-    def result: Summoner = Await.result(summonerPromise.future, 5.seconds)
+    def result: Future[Summoner] = summonerPromise.future
   }
 
 }
@@ -43,7 +43,7 @@ class SummonerManager extends LazyLogging {
   protected val repository = new SummonerRepository(couchDbCircuitBreaker)
   private val graph = createGraph().run()
 
-  def getSummoner(region: String, name: String): Summoner = {
+  def getSummoner(region: String, name: String): Future[Summoner] = {
     val getSummoner = GetSummoner(region, name)
     graph.offer(getSummoner)
     getSummoner.result
@@ -77,7 +77,7 @@ class SummonerManager extends LazyLogging {
 
       // String the Flow together
       fromCacheFlow ~> cacheResultBroadcast ~> fromRiotFlow ~> riotResultBroadcast ~> cacheSink
-                       cacheResultBroadcast ~> notCachedFilter ~>                     merge
+                       cacheResultBroadcast ~> notCachedFilter                     ~> merge
                                                                riotResultBroadcast ~> merge
 
       // The shape of this Graph is a Flow, meaning it has a single input and a single output.
