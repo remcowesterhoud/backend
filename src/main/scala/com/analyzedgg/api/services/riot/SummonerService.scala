@@ -1,13 +1,10 @@
 package com.analyzedgg.api.services.riot
 
-import akka.http.scaladsl.model.StatusCodes.OK
-import akka.http.scaladsl.model.StatusCodes.NotFound
+import akka.http.scaladsl.model.HttpResponse
+import akka.http.scaladsl.model.StatusCodes.{NotFound, OK}
 import com.analyzedgg.api.domain.riot.RiotSummoner
 import com.analyzedgg.api.services.SummonerManager.GetSummoner
 import com.analyzedgg.api.services.riot.SummonerService._
-
-import scala.concurrent.Await
-import scala.concurrent.duration._
 
 object SummonerService {
 
@@ -17,12 +14,15 @@ object SummonerService {
 
 case class SummonerService() extends RiotService {
   def getByName(data: GetSummoner): GetSummoner = {
-    val response = Await.result(riotGetRequest(data.region, summonerByName + data.name), 5.seconds)
-    response.status match {
-      case OK => data.summonerPromise.success(Await.result(mapRiotTo(response.entity, classOf[RiotSummoner]), 5.seconds).summoner)
-      case NotFound => data.summonerPromise.failure(SummonerNotFound)
-      case _ => data.summonerPromise.failure(new RuntimeException(s"An unknown error occurred. Riot API response:\n$response"))
-    }
+    riotGetRequest(data.region, summonerByName + data.name).mapTo[HttpResponse].map(httpResponse =>
+      httpResponse.status match {
+        case OK =>
+          mapRiotTo(httpResponse.entity, classOf[RiotSummoner]).mapTo[RiotSummoner].onSuccess {
+            case riotSummoner => data.summonerPromise.success(riotSummoner.summoner)
+          }
+        case NotFound => data.summonerPromise.failure(SummonerNotFound)
+        case _ => data.summonerPromise.failure(new RuntimeException(s"An unknown error occurred. Riot API response:\n$httpResponse"))
+      })
     data
   }
 }
