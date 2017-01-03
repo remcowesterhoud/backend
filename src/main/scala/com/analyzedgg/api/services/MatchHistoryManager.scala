@@ -8,7 +8,7 @@ import akka.stream._
 import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Merge, RunnableGraph, Sink, Source, SourceQueueWithComplete}
 import com.analyzedgg.api.domain.MatchDetail
 import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
-import com.analyzedgg.api.services.riot.TempMatchService
+import com.analyzedgg.api.services.riot.MatchService
 import com.typesafe.scalalogging.LazyLogging
 
 import scala.concurrent.duration._
@@ -44,7 +44,7 @@ class MatchHistoryManager extends LazyLogging {
   implicit val materializer: ActorMaterializer = ActorMaterializer(materializerSettings)(system)
   private final val matchAmount: Int = 10
 
-  protected val service = new TempMatchService()
+  protected val service = new MatchService()
   private val graph = createGraph().run()
 
   def getMatchHistory(region: String, summonerId: Long, queueParam: String, championParam: String): Seq[MatchDetail] = {

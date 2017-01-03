@@ -1,8 +1,7 @@
-package com.analyzedgg.api.routes
+package com.leagueprojecto.api.routes
 
 import com.analyzedgg.api.domain.riot.Player
 import com.analyzedgg.api.services.riot.SummonerService.SummonerNotFound
-import com.leagueprojecto.api.routes.RoutesTest
 
 // Do not remove the following import. IntelliJ might say it's not used, but it is for converting json to case classes.
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
