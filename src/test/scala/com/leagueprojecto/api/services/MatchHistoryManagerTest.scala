@@ -4,8 +4,8 @@ import com.analyzedgg.api.domain._
 import com.analyzedgg.api.domain.riot.Player
 import com.analyzedgg.api.services.MatchHistoryManager
 import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
-import com.analyzedgg.api.services.riot.TempMatchService
-import com.analyzedgg.api.services.riot.TempMatchService.FailedRetrievingRecentMatches
+import com.analyzedgg.api.services.riot.MatchService
+import com.analyzedgg.api.services.riot.MatchService.FailedRetrievingRecentMatches
 import com.leagueprojecto.api.testHelpers.TestClass
 
 import scala.collection.mutable.ArrayBuffer
@@ -16,7 +16,7 @@ import scala.collection.mutable.ArrayBuffer
 class MatchHistoryManagerTest extends TestClass {
 
   class TestMatchHistoryManager extends MatchHistoryManager {
-    override val service: TempMatchService = stub[TempMatchService]
+    override val service: MatchService = stub[MatchService]
   }
 
   val testSummoner = Summoner(123123123, "Wagglez", 100, 1434315156000L, 30)

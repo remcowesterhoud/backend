@@ -1,4 +1,4 @@
-package com.analyzedgg.api.routes
+package com.leagueprojecto.api.routes
 
 import com.analyzedgg.api.domain.riot.Player
 import com.analyzedgg.api.services.riot.SummonerService.SummonerNotFound

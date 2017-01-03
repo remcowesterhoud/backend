@@ -7,8 +7,8 @@ import com.analyzedgg.api.JsonProtocols
 import com.analyzedgg.api.domain.riot._
 import com.analyzedgg.api.domain.{MatchDetail, PlayerStats, Team, Teams}
 import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
-import com.analyzedgg.api.services.riot.TempMatchService
-import com.analyzedgg.api.services.riot.TempMatchService.FailedRetrievingRecentMatches
+import com.analyzedgg.api.services.riot.MatchService
+import com.analyzedgg.api.services.riot.MatchService.FailedRetrievingRecentMatches
 import com.leagueprojecto.api.testHelpers.TestClass
 import spray.json._
 
@@ -18,7 +18,7 @@ import scala.concurrent.duration._
 
 class MatchServiceTest extends TestClass with JsonProtocols {
 
-  class TestMatchService(httpResponse: HttpResponse) extends TempMatchService {
+  class TestMatchService(httpResponse: HttpResponse) extends MatchService {
     override def riotConnectionFlow(region: String, service: String, hostType: String): Flow[HttpRequest, HttpResponse, Any] = {
       Flow[HttpRequest].map { _ => httpResponse }
     }
