@@ -53,23 +53,25 @@ class MatchServiceTest extends TestClass with JsonProtocols {
 
   it should "get a list of match ids" in {
     // Setup
-    // TODO: Mapping doesnt work
-    //    val expectedIds = Seq(1L, 2L, 3L, 4L, 5L)
-    //    val entity = RiotRecentMatches(Seq(RecentMatch(expectedIds.head),
-    //      RecentMatch(expectedIds(1)),
-    //      RecentMatch(expectedIds(2)),
-    //      RecentMatch(expectedIds(3)),
-    //      RecentMatch(expectedIds.last))
-    //    )
-    //    val getMatchesRequest = GetMatches(region, summonerId, "", "")
-    //    Given("a summoner has played matches recently")
-    //    val response = HttpResponse(status = OK, entity = entity.toString)
-    //    val service = new TestMatchService(response)
-    //    When("the latest match ids are being fetched")
-    //    val result = service.getRecentMatchIds(getMatchesRequest, 10)
-    //    Then("the request promise should contain a list of match ids")
-    //    val actualIds = Await.result(result.lastIdsPromise.future, 3.seconds)
-    //    actualIds shouldEqual expectedIds
+    val expectedIds = Seq(1L, 2L, 3L, 4L, 5L)
+    val entity =
+      """
+        |{"matches":[
+        |   {"matchId":1},
+        |   {"matchId":2},
+        |   {"matchId":3},
+        |   {"matchId":4},
+        |   {"matchId":5}
+        |]}""".stripMargin
+    val getMatchesRequest = GetMatches(region, summonerId, "", "")
+    Given("a summoner has played matches recently")
+    val response = HttpResponse(status = OK, entity = entity)
+    val service = new TestMatchService(response)
+    When("the latest match ids are being fetched")
+    val result = service.getRecentMatchIds(getMatchesRequest, 10)
+    Then("the request promise should contain a list of match ids")
+    val actualIds = Await.result(result.lastIdsPromise.future, 3.seconds)
+    actualIds shouldEqual expectedIds
   }
 
   it should "fail the promise with a FailedRetrievingRecentMatches exception" in {
