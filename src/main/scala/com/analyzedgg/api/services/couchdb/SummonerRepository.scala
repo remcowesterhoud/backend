@@ -30,7 +30,7 @@ class SummonerRepository(couchDbCircuitBreaker: CircuitBreaker) extends Abstract
       case \/-(_) =>
         logger.info("Yay, summoner saved!")
       case -\/(exception) =>
-        logger.error(s"Error saving summoner ($id) in Db with reason: $e")
+        logger.error(s"Error saving summoner ($id) in Db with reason: $exception")
         throw exception
     }
   }
