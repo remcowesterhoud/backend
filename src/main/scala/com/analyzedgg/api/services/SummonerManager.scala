@@ -9,6 +9,7 @@ import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Merge, RunnableGraph, Si
 import com.analyzedgg.api.domain.Summoner
 import com.analyzedgg.api.services.SummonerManager.GetSummoner
 import com.analyzedgg.api.services.couchdb.SummonerRepository
+import com.analyzedgg.api.services.couchdb.SummonerRepository.SummonerNotFound
 import com.analyzedgg.api.services.riot.SummonerService
 import com.typesafe.scalalogging.LazyLogging
 
@@ -88,11 +89,11 @@ class SummonerManager extends LazyLogging {
   }
 
   private def retrieveFromCache(data: GetSummoner): GetSummoner = {
-    val result = repository.getByName(data.region, data.name)
-    if (result != null) {
-      data.summonerPromise.success(result)
+    try {
+      data.summonerPromise.success(repository.getByName(data.region, data.name))
+      data
     }
-    data
+    catch { case SummonerNotFound => data }
   }
 
   private def retrieveFromRiot(data: GetSummoner): GetSummoner = {
