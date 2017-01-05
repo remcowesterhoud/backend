@@ -6,6 +6,7 @@ import com.analyzedgg.api.domain.Summoner
 import com.analyzedgg.api.services.couchdb.SummonerRepository
 import com.analyzedgg.api.services.couchdb.SummonerRepository.SummonerNotFound
 import com.ibm.couchdb.{CouchDoc, CouchException, Res}
+import com.leagueprojecto.api.testHelpers.SummonerMockData._
 import com.leagueprojecto.api.testHelpers.TestClass
 
 import scala.concurrent.duration._
@@ -15,7 +16,6 @@ import scalaz.{-\/, \/-}
   * Created by RemcoW on 3-1-2017.
   */
 class SummonerRepositoryTest extends TestClass {
-  val testSummoner = Summoner(123123123, "Wagglez", 100, 1434315156000L, 30)
   val system = ActorSystem("testsystem")
 
   class MockCB extends CircuitBreaker(system.scheduler, 10, 5.seconds, 1.minute)
