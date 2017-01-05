@@ -1,11 +1,13 @@
 package com.leagueprojecto.api.services
 
 import com.analyzedgg.api.domain._
-import com.analyzedgg.api.domain.riot.Player
 import com.analyzedgg.api.services.MatchHistoryManager
 import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
+import com.analyzedgg.api.services.couchdb.MatchRepository
 import com.analyzedgg.api.services.riot.MatchService
 import com.analyzedgg.api.services.riot.MatchService.FailedRetrievingRecentMatches
+import com.leagueprojecto.api.testHelpers.MatchMockData._
+import com.leagueprojecto.api.testHelpers.SummonerMockData._
 import com.leagueprojecto.api.testHelpers.TestClass
 
 import scala.collection.mutable.ArrayBuffer
@@ -15,49 +17,14 @@ import scala.collection.mutable.ArrayBuffer
   */
 class MatchHistoryManagerTest extends TestClass {
 
+  class MockableMatchRepository extends MatchRepository(null)
+
   class TestMatchHistoryManager extends MatchHistoryManager {
     override val service: MatchService = stub[MatchService]
+    override val repository: MatchRepository = stub[MockableMatchRepository]
   }
 
-  val testSummoner = Summoner(123123123, "Wagglez", 100, 1434315156000L, 30)
-  val testRegion = "euw"
-
-  def createMockDetails(matchId: Long): MatchDetail = {
-    val playerStats = PlayerStats(
-      101L,
-      202L,
-      303L,
-      404L
-    )
-    val teams = Teams(
-      Team(Seq(
-        Player(testSummoner.id, testSummoner.name),
-        Player(111L, "ally1"),
-        Player(121L, "ally2")
-      )),
-      Team(Seq(
-        Player(131L, "enemy1"),
-        Player(141L, "enemy2"),
-        Player(151L, "enemy3")
-      ))
-    )
-    MatchDetail(
-      matchId,
-      "queueType",
-      100L,
-      200L,
-      testSummoner.id,
-      300L,
-      "role",
-      "lane",
-      winner = true,
-      "matchVersion",
-      playerStats,
-      teams
-    )
-  }
-
-  "MatchHistoryManager" should "retrieve the 10 latest match details" in {
+  "MatchHistoryManager" should "retrieve the 10 latest match details and cache them" in {
     // Setup
     val manager = new TestMatchHistoryManager()
 
@@ -72,13 +39,22 @@ class MatchHistoryManagerTest extends TestClass {
       expectedMatches.append(detail)
       manager.service.getMatchDetails _ when(testRegion, testSummoner.id, i) returns detail
     }
+    And("the matches don't exist in the cache")
+    //TODO: mock fetching from cache once this is made
     When("the match details are being retrieved")
     val actualMatches = manager.getMatchHistory(testRegion, testSummoner.id, "", "")
-    Then("the 10 latest match details should be returned")
+    Then("the cache should be checked for the match details")
+    //TODO: verify the cache was checked for the 10 details once this is made
+    And("the 10 latest match details should be returned")
     actualMatches.length shouldEqual 10
     for (actualDetails <- actualMatches) {
       expectedMatches contains actualDetails shouldBe true
     }
+    And("the match details should be cached")
+    // 500ms sleep required as the db save call is made asynchronously. This means this test will check if the save
+    // call was made before this actually happened.
+    Thread.sleep(500)
+    manager.repository.save _ verify(expectedMatches, testRegion, testSummoner.id)
   }
 
   it should "retrieve less then 10 matches if the summoner did not play 10 matches yet" in {
@@ -96,13 +72,22 @@ class MatchHistoryManagerTest extends TestClass {
       expectedMatches.append(detail)
       manager.service.getMatchDetails _ when(testRegion, testSummoner.id, i) returns detail
     }
+    And("the matches don't exist in the cache")
+    //TODO: mock fetching from cache once this is made
     When("the match details are being retrieved")
     val actualMatches = manager.getMatchHistory(testRegion, testSummoner.id, "", "")
-    Then("the 3 latest match details should be returned")
+    Then("the cache should be checked for the match details")
+    //TODO: verify the cache was checked for the 10 details once this is made
+    And("the 3 latest match details should be returned")
     actualMatches.length shouldEqual 3
     for (actualDetails <- actualMatches) {
       expectedMatches contains actualDetails shouldBe true
     }
+    And("the match details should be cached")
+    // 500ms sleep required as the db save call is made asynchronously. This means this test will check if the save
+    // call was made before this actually happened.
+    Thread.sleep(500)
+    manager.repository.save _ verify(expectedMatches, testRegion, testSummoner.id)
   }
 
   it should "return an empty list if the summoner has played no matches" in {

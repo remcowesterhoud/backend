@@ -8,6 +8,7 @@ import akka.stream._
 import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Merge, RunnableGraph, Sink, Source, SourceQueueWithComplete}
 import com.analyzedgg.api.domain.MatchDetail
 import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
+import com.analyzedgg.api.services.couchdb.MatchRepository
 import com.analyzedgg.api.services.riot.MatchService
 import com.typesafe.scalalogging.LazyLogging
 
@@ -45,6 +46,7 @@ class MatchHistoryManager extends LazyLogging {
   private final val matchAmount: Int = 10
 
   protected val service = new MatchService()
+  protected val repository = new MatchRepository(couchDbCircuitBreaker)
   private val graph = createGraph().run()
 
   def getMatchHistory(region: String, summonerId: Long, queueParam: String, championParam: String): Seq[MatchDetail] = {
@@ -85,10 +87,12 @@ class MatchHistoryManager extends LazyLogging {
 
     val mapIdsFlow = builder.add(Flow[GetMatches].map(mapMatchIds).async)
     val detailsFromRiotFlow = builder.add(Flow[GetMatches].map(getDetailsFromRiot).async)
+    val detailsBroadcast = builder.add(Broadcast[GetMatches](2))
+    val cacheDetailsSink = Sink.foreach(cacheDetails).async
 
-    mapIdsFlow ~> detailsFromRiotFlow
+    mapIdsFlow ~> detailsFromRiotFlow ~> detailsBroadcast ~> cacheDetailsSink
 
-    FlowShape(mapIdsFlow.in, detailsFromRiotFlow.out)
+    FlowShape(mapIdsFlow.in, detailsBroadcast.out(1))
   })
 
   private def getLastIds(data: GetMatches): GetMatches = {
@@ -126,6 +130,10 @@ class MatchHistoryManager extends LazyLogging {
     data
   }
 
+  private def cacheDetails(data: GetMatches) = {
+    data.detailsPromise.future.onSuccess { case matchDetails => repository.save(matchDetails, data.region, data.summonerId) }
+  }
+
   private def parseResults(data: GetMatches): GetMatches = {
     data.lastIdsPromise.future.value match {
       case Some(Success(v)) =>
@@ -139,10 +147,4 @@ class MatchHistoryManager extends LazyLogging {
     }
     data
   }
-
-//  private def hasEmptyValues(mergedMatches: Map[Long, Option[MatchDetail]]): Boolean =
-//    mergedMatches.values.exists(_.isEmpty)
-//
-//  private def getValues(mergedMatches: Map[Long, Option[MatchDetail]]): Seq[MatchDetail] =
-//    mergedMatches.values.map(_.get).toSeq
 }

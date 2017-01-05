@@ -12,4 +12,5 @@ import scala.concurrent.ExecutionContext
   */
 class TestClass extends FlatSpec with Matchers with GivenWhenThen with MockFactory {
   implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newCachedThreadPool())
+  val testRegion = "euw"
 }
