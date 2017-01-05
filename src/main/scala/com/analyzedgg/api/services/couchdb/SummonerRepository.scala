@@ -1,14 +1,13 @@
 package com.analyzedgg.api.services.couchdb
 
-import akka.pattern.{CircuitBreaker, CircuitBreakerOpenException}
+import akka.pattern.CircuitBreaker
 import com.analyzedgg.api.domain.Summoner
 import com.analyzedgg.api.services.couchdb.SummonerRepository.SummonerNotFound
 import com.ibm.couchdb.Res.Error
 import com.ibm.couchdb.{CouchDbApi, CouchException, TypeMapping}
 import org.http4s.Status.NotFound
 
-import scala.util.{Failure, Success, Try}
-import scalaz.{-\/, \/, \/-}
+import scalaz.{-\/, \/-}
 
 /**
   * Created by RemcoW on 5-12-2016.
@@ -19,7 +18,7 @@ object SummonerRepository {
 
 }
 
-class SummonerRepository(couchDbCircuitBreaker: CircuitBreaker) extends AbstractRepository {
+class SummonerRepository(override val couchDbCircuitBreaker: CircuitBreaker) extends AbstractRepository {
   val mapping = TypeMapping(classOf[Summoner] -> "Summoner")
   val db: CouchDbApi = couch.db("summoner-db", mapping)
 
@@ -48,19 +47,6 @@ class SummonerRepository(couchDbCircuitBreaker: CircuitBreaker) extends Abstract
       case -\/(exception) =>
         logger.error(s"Error retrieving summoner ($id) from Db with reason: $exception")
         throw SummonerNotFound
-    }
-  }
-
-  private def generateId(region: String, name: String): String = {
-    s"$region:$name"
-  }
-
-  private[this] def tryWithCircuitBreaker[A](query: => Throwable \/ A): Throwable \/ A = {
-    Try(couchDbCircuitBreaker.withSyncCircuitBreaker(query)) match {
-      case Success(validResponse: (Throwable \/ A)) =>
-        validResponse
-      case Failure(exception: CircuitBreakerOpenException) => -\/(exception)
-      case _ => -\/(new RuntimeException("An unknown error has occurred."))
     }
   }
 }
