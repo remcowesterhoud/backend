@@ -16,9 +16,7 @@ import scalaz.{-\/, \/-}
   */
 class SummonerRepositoryTest extends TestClass {
   val testSummoner = Summoner(123123123, "Wagglez", 100, 1434315156000L, 30)
-  val testRegion = "euw"
   val system = ActorSystem("testsystem")
-  val circuitBreaker = new CircuitBreaker(system.scheduler, 10, callTimeout = 5.seconds, resetTimeout = 1.minute)
 
   class MockCB extends CircuitBreaker(system.scheduler, 10, 5.seconds, 1.minute)
 

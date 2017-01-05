@@ -55,15 +55,15 @@ class SummonerManagerTest extends TestClass {
     }
     When("a summoner is being retrieved")
     val response = manager.getSummoner(region, name)
-    // 500ms sleep required as the db save call is made asynchronously. This means this test will check if the save
-    // call was made before this actually happened.
-    Thread.sleep(500)
     Then("the cache should be checked for the summoner")
     manager.repository.getByName _ verify(region, name) once()
     And("the expected summoner should be returned")
     val summoner = Await.result(response, 5.seconds)
     summoner shouldEqual testSummoner
     And("the summoner should be cached")
+    // 500ms sleep required as the db save call is made asynchronously. This means this test will check if the save
+    // call was made before this actually happened.
+    Thread.sleep(500)
     manager.repository.save _ verify(testSummoner, region) once()
   }
 
