@@ -23,7 +23,7 @@ class SummonerRepository(override val couchDbCircuitBreaker: CircuitBreaker) ext
   val db: CouchDbApi = couch.db("summoner-db", mapping)
 
   def save(summoner: Summoner, region: String): Unit = {
-    val id = generateId(region, summoner.name.toLowerCase)
+    val id = generateId(region, summoner.name.replaceAll(" ", "").toLowerCase)
     val response = tryWithCircuitBreaker(db.docs.create(summoner, id).attemptRun)
     response match {
       case \/-(_) =>

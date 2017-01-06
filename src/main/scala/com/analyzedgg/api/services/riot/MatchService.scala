@@ -1,45 +1,50 @@
 package com.analyzedgg.api.services.riot
 
-import akka.http.scaladsl.model.StatusCodes.OK
-import akka.http.scaladsl.model.StatusCodes.NotFound
+import akka.http.scaladsl.model.HttpResponse
+import akka.http.scaladsl.model.StatusCodes.{NotFound, OK}
 import com.analyzedgg.api.domain.riot._
 import com.analyzedgg.api.domain.{MatchDetail, PlayerStats, Team, Teams}
 import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
-import com.analyzedgg.api.services.riot.MatchService.FailedRetrievingRecentMatches
+import com.analyzedgg.api.services.riot.MatchService.{FailedRetrievingMatchDetails, FailedRetrievingRecentMatches}
 import com.typesafe.scalalogging.LazyLogging
 
-import scala.concurrent.Await
-import scala.concurrent.duration._
+import scala.concurrent.Future
 
 object MatchService {
 
   case object FailedRetrievingRecentMatches extends Exception
+
+  case object FailedRetrievingMatchDetails extends Exception
 
 }
 
 case class MatchService() extends RiotService with LazyLogging {
   def getRecentMatchIds(data: GetMatches, amount: Int): GetMatches = {
     val queryParams: Map[String, String] = Map("beginIndex" -> 0.toString, "endIndex" -> amount.toString)
-    val response = Await.result(riotGetRequest(data.region, matchListBySummonerId + data.summonerId, queryParams), 5.seconds)
-    response.status match {
-      case OK =>
-        val recentMatchList = Await.result(mapRiotTo(response.entity, classOf[RiotRecentMatches]), 5.seconds)
-        data.lastIdsPromise.success(recentMatchList.matches.map(_.matchId))
-      case NotFound => data.lastIdsPromise.failure(FailedRetrievingRecentMatches)
-      case _ => data.lastIdsPromise.failure(new RuntimeException(s"An unknown error occurred. Riot API response:\n$response"))
-    }
+    riotGetRequest(data.region, matchListBySummonerId + data.summonerId, queryParams).mapTo[HttpResponse].map(httpResponse =>
+      httpResponse.status match {
+        case OK =>
+          mapRiotTo(httpResponse.entity, classOf[RiotRecentMatches]).onSuccess {
+            case recentMatchList => data.lastIdsPromise.success(recentMatchList.matches.map(_.matchId))
+          }
+        case NotFound => data.lastIdsPromise.failure(FailedRetrievingRecentMatches)
+        case _ => data.lastIdsPromise.failure(new RuntimeException(s"An unknown error occurred. riot API response:\n$httpResponse"))
+      })
     data
   }
 
 
-  def getMatchDetails(region: String, summonerId: Long, matchId: Long): MatchDetail = {
-    val response = Await.result(riotGetRequest(region, matchById + matchId), 5.seconds)
-    response.status match {
-      case OK => toMatchDetail(Await.result(mapRiotTo(response.entity, classOf[RiotMatch]), 5.seconds), summonerId)
-      case _ =>
-        logger.error(s"Failed retrieving match details.\nReason: $response")
-        null
-    }
+  def getMatchDetails(region: String, summonerId: Long, matchId: Long): Future[MatchDetail] = {
+    riotGetRequest(region, matchById + matchId).mapTo[HttpResponse].map(httpResponse => {
+      httpResponse.status match {
+        case OK => mapRiotTo(httpResponse.entity, classOf[RiotMatch]).mapTo[RiotMatch]
+        case _ =>
+          logger.error(s"Failed retrieving match details.\nReason: $httpResponse")
+          throw FailedRetrievingMatchDetails
+      }
+    }).flatMap(futureRiotMatch => {
+      futureRiotMatch.map(toMatchDetail(_, summonerId))
+    })
   }
 
   private[this] def toMatchDetail(riotMatch: RiotMatch, summonerId: Long): MatchDetail = {

@@ -5,12 +5,14 @@ import com.analyzedgg.api.services.MatchHistoryManager
 import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
 import com.analyzedgg.api.services.couchdb.MatchRepository
 import com.analyzedgg.api.services.riot.MatchService
-import com.analyzedgg.api.services.riot.MatchService.FailedRetrievingRecentMatches
+import com.analyzedgg.api.services.riot.MatchService.{FailedRetrievingMatchDetails, FailedRetrievingRecentMatches}
 import com.leagueprojecto.api.testHelpers.MatchMockData._
 import com.leagueprojecto.api.testHelpers.SummonerMockData._
 import com.leagueprojecto.api.testHelpers.TestClass
 
 import scala.collection.mutable.ArrayBuffer
+import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 
 /**
   * Created by RemcoW on 14-12-2016.
@@ -37,12 +39,12 @@ class MatchHistoryManagerTest extends TestClass {
     for (i <- 1L to 10L) {
       val detail = createMockDetails(i)
       expectedMatches.append(detail)
-      manager.service.getMatchDetails _ when(testRegion, testSummoner.id, i) returns detail
+      manager.service.getMatchDetails _ when(testRegion, testSummoner.id, i) returns Future(detail)
     }
     And("the matches don't exist in the cache")
     //TODO: mock fetching from cache once this is made
     When("the match details are being retrieved")
-    val actualMatches = manager.getMatchHistory(testRegion, testSummoner.id, "", "")
+    val actualMatches = Await.result(manager.getMatchHistory(testRegion, testSummoner.id, "", ""), 10.seconds)
     Then("the cache should be checked for the match details")
     //TODO: verify the cache was checked for the 10 details once this is made
     And("the 10 latest match details should be returned")
@@ -70,12 +72,12 @@ class MatchHistoryManagerTest extends TestClass {
     for (i <- 1L to 3L) {
       val detail = createMockDetails(i)
       expectedMatches.append(detail)
-      manager.service.getMatchDetails _ when(testRegion, testSummoner.id, i) returns detail
+      manager.service.getMatchDetails _ when(testRegion, testSummoner.id, i) returns Future(detail)
     }
     And("the matches don't exist in the cache")
     //TODO: mock fetching from cache once this is made
     When("the match details are being retrieved")
-    val actualMatches = manager.getMatchHistory(testRegion, testSummoner.id, "", "")
+    val actualMatches = Await.result(manager.getMatchHistory(testRegion, testSummoner.id, "", ""), 5.seconds)
     Then("the cache should be checked for the match details")
     //TODO: verify the cache was checked for the 10 details once this is made
     And("the 3 latest match details should be returned")
@@ -100,7 +102,7 @@ class MatchHistoryManagerTest extends TestClass {
       data
     }
     When("the match details are being retrieved")
-    val actualMatches = manager.getMatchHistory(testRegion, testSummoner.id, "", "")
+    val actualMatches = Await.result(manager.getMatchHistory(testRegion, testSummoner.id, "", ""), 5.seconds)
     Then("an empty list should be returned")
     actualMatches.isEmpty shouldBe true
   }
@@ -116,9 +118,9 @@ class MatchHistoryManagerTest extends TestClass {
       data
     }
     And("the match details can not be retrieved from the Riot API")
-    manager.service.getMatchDetails _ when(testRegion, testSummoner.id, id) returns null
+    manager.service.getMatchDetails _ when(testRegion, testSummoner.id, id) throws FailedRetrievingMatchDetails
     When("the match details are being retrieved")
-    val actualMatches = manager.getMatchHistory(testRegion, testSummoner.id, "", "")
+    val actualMatches = Await.result(manager.getMatchHistory(testRegion, testSummoner.id, "", ""), 5.seconds)
     Then("an empty list should be returned")
     actualMatches.isEmpty shouldBe true
   }
@@ -133,7 +135,7 @@ class MatchHistoryManagerTest extends TestClass {
       data
     }
     When("the match details are being retrieved")
-    val exception = the[FailedRetrievingRecentMatches.type] thrownBy manager.getMatchHistory(testRegion, testSummoner.id, "", "")
+    val exception = the[FailedRetrievingRecentMatches.type] thrownBy Await.result(manager.getMatchHistory(testRegion, testSummoner.id, "", ""), 5.seconds)
     Then("a FailedRetrievingRecentMatches exception should be thrown")
     exception shouldEqual FailedRetrievingRecentMatches
   }
@@ -148,21 +150,8 @@ class MatchHistoryManagerTest extends TestClass {
       data
     }
     When("the match details are being retrieved")
-    val exception = the[RuntimeException] thrownBy manager.getMatchHistory(testRegion, testSummoner.id, "", "")
+    val exception = the[RuntimeException] thrownBy Await.result(manager.getMatchHistory(testRegion, testSummoner.id, "", ""), 5.seconds)
     Then("an exception should be thrown")
     exception.isInstanceOf[RuntimeException] shouldBe true
   }
-
-  it should "throw an exception if some unknown exception occurs getting the recent match ids" in {
-    // Setup
-    val manager = new TestMatchHistoryManager()
-
-    Given("something goes completing the last ids promise while getting the recent match ids")
-    manager.service.getRecentMatchIds _ when(*, 10) onCall { (data: GetMatches, amount: Int) => data }
-    When("the match details are being retrieved")
-    val exception = the[RuntimeException] thrownBy manager.getMatchHistory(testRegion, testSummoner.id, "", "")
-    Then("an exception should be thrown")
-    exception.isInstanceOf[RuntimeException] shouldBe true
-  }
-
 }

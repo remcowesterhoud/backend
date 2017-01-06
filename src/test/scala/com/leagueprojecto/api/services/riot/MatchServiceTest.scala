@@ -8,7 +8,7 @@ import com.analyzedgg.api.domain.riot._
 import com.analyzedgg.api.domain.{MatchDetail, PlayerStats, Team, Teams}
 import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
 import com.analyzedgg.api.services.riot.MatchService
-import com.analyzedgg.api.services.riot.MatchService.FailedRetrievingRecentMatches
+import com.analyzedgg.api.services.riot.MatchService.{FailedRetrievingMatchDetails, FailedRetrievingRecentMatches}
 import com.leagueprojecto.api.testHelpers.TestClass
 import spray.json._
 
@@ -33,12 +33,12 @@ class MatchServiceTest extends TestClass with JsonProtocols {
     val response = HttpResponse(status = OK, entity = matchDetails)
     val service = new TestMatchService(response)
     When("valid MatchDetails are requested")
-    val result = service.getMatchDetails(region, summonerId, matchId)
+    val result = Await.result(service.getMatchDetails(region, summonerId, matchId), 5.seconds)
     Then("the expected MatchDetail should be returned")
     result shouldEqual mockMatchDetail
   }
 
-  it should "return null" in {
+  it should "thow a FailedRetrievingMatchDetails exception" in {
     // Setup
     val matchId = 1000L
 
@@ -46,9 +46,9 @@ class MatchServiceTest extends TestClass with JsonProtocols {
     val response = HttpResponse(status = NotFound)
     val service = new TestMatchService(response)
     When("invalid MatchDetails are requested")
-    val result = service.getMatchDetails("invalid", summonerId, matchId)
-    Then("null should be returned")
-    result shouldBe null
+    val exception = the[FailedRetrievingMatchDetails.type] thrownBy Await.result(service.getMatchDetails("invalid", summonerId, matchId), 5.seconds)
+    Then("FailedRetrievingMatchDetails should be thrown")
+    exception shouldEqual FailedRetrievingMatchDetails
   }
 
   it should "get a list of match ids" in {

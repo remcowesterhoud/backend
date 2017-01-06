@@ -3,6 +3,8 @@ package com.leagueprojecto.api.routes
 import com.analyzedgg.api.domain.riot.Player
 import com.analyzedgg.api.services.riot.SummonerService.SummonerNotFound
 
+import scala.concurrent.Future
+
 // Do not remove the following import. IntelliJ might say it's not used, but it is for converting json to case classes.
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.http.scaladsl.model.ContentTypes._
@@ -27,9 +29,9 @@ class MatchHistoryRoute extends RoutesTest {
   val validHistoryList = List(validHistory)
 
   class MatchHistoryManagerMock extends MatchHistoryManager {
-    override def getMatchHistory(region: String, summonerId: Long, queueParam: String, championParam: String): Seq[MatchDetail] = {
+    override def getMatchHistory(region: String, summonerId: Long, queueParam: String, championParam: String): Future[Seq[MatchDetail]] = {
       summonerId match {
-        case `validSummonerId` => validHistoryList
+        case `validSummonerId` => Future(validHistoryList)
         case `invalidSummonerId` => throw SummonerNotFound
         case _ => throw new Exception("Internal server error")
       }

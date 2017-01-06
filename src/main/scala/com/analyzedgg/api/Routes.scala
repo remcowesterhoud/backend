@@ -10,9 +10,9 @@ import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.{ExceptionHandler, Route}
 import akka.pattern.{CircuitBreaker, ask}
 import akka.util.Timeout
-import com.analyzedgg.api.domain.Summoner
+import com.analyzedgg.api.domain.{MatchDetail, Summoner}
 import com.analyzedgg.api.services.riot.ChampionService.GetChampions
-import com.analyzedgg.api.services.riot.{ChampionService, RiotService, SummonerService, MatchService}
+import com.analyzedgg.api.services.riot.{ChampionService, MatchService, RiotService, SummonerService}
 import com.analyzedgg.api.services.{MatchHistoryManager, SummonerManager}
 import com.typesafe.config.Config
 
@@ -91,7 +91,8 @@ trait Routes extends JsonProtocols {
         pathEndOrSingleSlash {
           get {
             complete {
-              getMatchHistoryManager.getMatchHistory(region, summonerId, queueParam, championParam)
+              val future = getMatchHistoryManager.getMatchHistory(region, summonerId, queueParam, championParam)
+              future.mapTo[Seq[MatchDetail]]
             }
           } ~ optionsSupport
         }
