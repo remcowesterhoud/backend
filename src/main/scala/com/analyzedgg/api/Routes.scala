@@ -10,8 +10,9 @@ import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.{ExceptionHandler, Route}
 import akka.pattern.{CircuitBreaker, ask}
 import akka.util.Timeout
+import com.analyzedgg.api.domain.{MatchDetail, Summoner}
 import com.analyzedgg.api.services.riot.ChampionService.GetChampions
-import com.analyzedgg.api.services.riot.{ChampionService, RiotService, SummonerService, TempMatchService}
+import com.analyzedgg.api.services.riot.{ChampionService, MatchService, RiotService, SummonerService}
 import com.analyzedgg.api.services.{MatchHistoryManager, SummonerManager}
 import com.typesafe.config.Config
 
@@ -45,10 +46,9 @@ trait Routes extends JsonProtocols {
   }
 
   protected implicit def myExceptionHandler = ExceptionHandler {
-    case e: RiotService.ServiceNotAvailable => complete(HttpResponse(ServiceUnavailable))
     case e: RiotService.TooManyRequests => complete(HttpResponse(TooManyRequests))
     case SummonerService.SummonerNotFound => complete(HttpResponse(NotFound))
-    case TempMatchService.FailedRetrievingRecentMatches => complete(HttpResponse(ServiceUnavailable))
+    case MatchService.FailedRetrievingRecentMatches => complete(HttpResponse(ServiceUnavailable))
     //         ChampionService.FailedRetrievingChampions |
     //         SummonerService.FailedRetrievingSummoner => complete(HttpResponse(ServiceUnavailable))
     case _ => complete(HttpResponse(InternalServerError))
@@ -77,7 +77,8 @@ trait Routes extends JsonProtocols {
       pathEndOrSingleSlash {
         get {
           complete {
-            getSummonerManager.getSummoner(region, name)
+            val future = getSummonerManager.getSummoner(region, name)
+            future.mapTo[Summoner]
           }
         } ~ optionsSupport
       }
@@ -90,7 +91,8 @@ trait Routes extends JsonProtocols {
         pathEndOrSingleSlash {
           get {
             complete {
-              getMatchHistoryManager.getMatchHistory(region, summonerId, queueParam, championParam)
+              val future = getMatchHistoryManager.getMatchHistory(region, summonerId, queueParam, championParam)
+              future.mapTo[Seq[MatchDetail]]
             }
           } ~ optionsSupport
         }

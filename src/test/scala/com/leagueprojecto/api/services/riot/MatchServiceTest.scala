@@ -7,8 +7,8 @@ import com.analyzedgg.api.JsonProtocols
 import com.analyzedgg.api.domain.riot._
 import com.analyzedgg.api.domain.{MatchDetail, PlayerStats, Team, Teams}
 import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
-import com.analyzedgg.api.services.riot.TempMatchService
-import com.analyzedgg.api.services.riot.TempMatchService.FailedRetrievingRecentMatches
+import com.analyzedgg.api.services.riot.MatchService
+import com.analyzedgg.api.services.riot.MatchService.{FailedRetrievingMatchDetails, FailedRetrievingRecentMatches}
 import com.leagueprojecto.api.testHelpers.TestClass
 import spray.json._
 
@@ -18,7 +18,7 @@ import scala.concurrent.duration._
 
 class MatchServiceTest extends TestClass with JsonProtocols {
 
-  class TestMatchService(httpResponse: HttpResponse) extends TempMatchService {
+  class TestMatchService(httpResponse: HttpResponse) extends MatchService {
     override def riotConnectionFlow(region: String, service: String, hostType: String): Flow[HttpRequest, HttpResponse, Any] = {
       Flow[HttpRequest].map { _ => httpResponse }
     }
@@ -33,12 +33,12 @@ class MatchServiceTest extends TestClass with JsonProtocols {
     val response = HttpResponse(status = OK, entity = matchDetails)
     val service = new TestMatchService(response)
     When("valid MatchDetails are requested")
-    val result = service.getMatchDetails(region, summonerId, matchId)
+    val result = Await.result(service.getMatchDetails(region, summonerId, matchId), 5.seconds)
     Then("the expected MatchDetail should be returned")
     result shouldEqual mockMatchDetail
   }
 
-  it should "return null" in {
+  it should "thow a FailedRetrievingMatchDetails exception" in {
     // Setup
     val matchId = 1000L
 
@@ -46,30 +46,32 @@ class MatchServiceTest extends TestClass with JsonProtocols {
     val response = HttpResponse(status = NotFound)
     val service = new TestMatchService(response)
     When("invalid MatchDetails are requested")
-    val result = service.getMatchDetails("invalid", summonerId, matchId)
-    Then("null should be returned")
-    result shouldBe null
+    val exception = the[FailedRetrievingMatchDetails.type] thrownBy Await.result(service.getMatchDetails("invalid", summonerId, matchId), 5.seconds)
+    Then("FailedRetrievingMatchDetails should be thrown")
+    exception shouldEqual FailedRetrievingMatchDetails
   }
 
   it should "get a list of match ids" in {
     // Setup
-    // TODO: Mapping doesnt work
-    //    val expectedIds = Seq(1L, 2L, 3L, 4L, 5L)
-    //    val entity = RiotRecentMatches(Seq(RecentMatch(expectedIds.head),
-    //      RecentMatch(expectedIds(1)),
-    //      RecentMatch(expectedIds(2)),
-    //      RecentMatch(expectedIds(3)),
-    //      RecentMatch(expectedIds.last))
-    //    )
-    //    val getMatchesRequest = GetMatches(region, summonerId, "", "")
-    //    Given("a summoner has played matches recently")
-    //    val response = HttpResponse(status = OK, entity = entity.toString)
-    //    val service = new TestMatchService(response)
-    //    When("the latest match ids are being fetched")
-    //    val result = service.getRecentMatchIds(getMatchesRequest, 10)
-    //    Then("the request promise should contain a list of match ids")
-    //    val actualIds = Await.result(result.lastIdsPromise.future, 3.seconds)
-    //    actualIds shouldEqual expectedIds
+    val expectedIds = Seq(1L, 2L, 3L, 4L, 5L)
+    val entity =
+      """
+        |{"matches":[
+        |   {"matchId":1},
+        |   {"matchId":2},
+        |   {"matchId":3},
+        |   {"matchId":4},
+        |   {"matchId":5}
+        |]}""".stripMargin
+    val getMatchesRequest = GetMatches(region, summonerId, "", "")
+    Given("a summoner has played matches recently")
+    val response = HttpResponse(status = OK, entity = entity)
+    val service = new TestMatchService(response)
+    When("the latest match ids are being fetched")
+    val result = service.getRecentMatchIds(getMatchesRequest, 10)
+    Then("the request promise should contain a list of match ids")
+    val actualIds = Await.result(result.lastIdsPromise.future, 3.seconds)
+    actualIds shouldEqual expectedIds
   }
 
   it should "fail the promise with a FailedRetrievingRecentMatches exception" in {

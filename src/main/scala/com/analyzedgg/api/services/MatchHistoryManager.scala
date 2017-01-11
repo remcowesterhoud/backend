@@ -1,6 +1,6 @@
 package com.analyzedgg.api.services
 
-import java.util.concurrent.Executors
+import java.util.concurrent.{ConcurrentHashMap, Executors}
 
 import akka.actor.ActorSystem
 import akka.pattern.CircuitBreaker
@@ -8,12 +8,15 @@ import akka.stream._
 import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Merge, RunnableGraph, Sink, Source, SourceQueueWithComplete}
 import com.analyzedgg.api.domain.MatchDetail
 import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
-import com.analyzedgg.api.services.riot.TempMatchService
+import com.analyzedgg.api.services.couchdb.MatchRepository
+import com.analyzedgg.api.services.riot.MatchService
 import com.typesafe.scalalogging.LazyLogging
 
+import scala.collection.concurrent.Map
+import scala.collection.convert.decorateAsScala._
+import scala.concurrent._
 import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Promise}
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 object MatchHistoryManager {
   private val manager: MatchHistoryManager = new MatchHistoryManager()
@@ -23,9 +26,9 @@ object MatchHistoryManager {
   case class GetMatches(region: String, summonerId: Long, queueType: String, championList: String) {
     val detailsPromise: Promise[Seq[MatchDetail]] = Promise()
     val lastIdsPromise: Promise[Seq[Long]] = Promise()
-    var matchesMap: Map[Long, Option[MatchDetail]] = _
+    var matchesMap: Map[Long, Option[MatchDetail]] = new ConcurrentHashMap[Long, Option[MatchDetail]]().asScala
 
-    def result: Seq[MatchDetail] = Await.result(detailsPromise.future, 5.seconds)
+    def result: Future[Seq[MatchDetail]] = detailsPromise.future
   }
 
 }
@@ -44,10 +47,11 @@ class MatchHistoryManager extends LazyLogging {
   implicit val materializer: ActorMaterializer = ActorMaterializer(materializerSettings)(system)
   private final val matchAmount: Int = 10
 
-  protected val service = new TempMatchService()
+  protected val service = new MatchService()
+  protected val repository = new MatchRepository(couchDbCircuitBreaker)
   private val graph = createGraph().run()
 
-  def getMatchHistory(region: String, summonerId: Long, queueParam: String, championParam: String): Seq[MatchDetail] = {
+  def getMatchHistory(region: String, summonerId: Long, queueParam: String, championParam: String): Future[Seq[MatchDetail]] = {
     val getMatches = GetMatches(region, summonerId, queueParam, championParam)
     graph.offer(getMatches)
     getMatches.result
@@ -85,10 +89,12 @@ class MatchHistoryManager extends LazyLogging {
 
     val mapIdsFlow = builder.add(Flow[GetMatches].map(mapMatchIds).async)
     val detailsFromRiotFlow = builder.add(Flow[GetMatches].map(getDetailsFromRiot).async)
+    val detailsBroadcast = builder.add(Broadcast[GetMatches](2))
+    val cacheDetailsSink = Sink.foreach(cacheDetails).async
 
-    mapIdsFlow ~> detailsFromRiotFlow
+    mapIdsFlow ~> detailsFromRiotFlow ~> detailsBroadcast ~> cacheDetailsSink
 
-    FlowShape(mapIdsFlow.in, detailsFromRiotFlow.out)
+    FlowShape(mapIdsFlow.in, detailsBroadcast.out(1))
   })
 
   private def getLastIds(data: GetMatches): GetMatches = {
@@ -97,33 +103,41 @@ class MatchHistoryManager extends LazyLogging {
   }
 
   private def foundLastIds(data: GetMatches): Boolean = {
-    data.lastIdsPromise.future.value match {
-      case Some(Success(v)) => true
-      case _ => false
+    // I can't think of any way to do this without a blocking Await.
+    Try(Await.result(data.lastIdsPromise.future, 5.seconds)) match {
+      case Success(ids) => ids.nonEmpty
+      case v => false
     }
   }
 
   private def mapMatchIds(data: GetMatches) = {
     val ids: Seq[Long] = Await.result(data.lastIdsPromise.future, 5.seconds)
-    data.matchesMap = ids.map(id => id -> None).toMap
+    ids.map(data.matchesMap.put(_, None))
     data
   }
 
   private def getDetailsFromRiot(data: GetMatches): GetMatches = {
     val matchesToRetrieve = data.matchesMap.filter(m => m._2.isEmpty).keys
     logger.info(s"going to get matches: [$matchesToRetrieve] from riot")
-    // TODO: Retrieve and map the matches in parallel
     matchesToRetrieve.foreach(matchId => {
-      val details = service.getMatchDetails(data.region, data.summonerId, matchId)
-      if (details != null) {
-        data.matchesMap = data.matchesMap.updated(matchId, Some(details))
-      }
-      else {
-        logger.error(s"Retrieving match details with id $matchId failed. Removing from details list.")
-        data.matchesMap -= matchId
+      Try(service.getMatchDetails(data.region, data.summonerId, matchId)) match {
+        case Success(v) => v.onComplete({
+          case Success(details) => data.matchesMap.update(matchId, Some(details))
+          case Failure(exception) =>
+            logger.error(s"Parsing match details with id $matchId failed. Removing from details list.")
+            data.matchesMap -= matchId
+        })
+        case Failure(exception) =>
+          logger.error(s"Retrieving match details with id $matchId failed. Removing from details list.")
+          data.matchesMap -= matchId
       }
     })
+    while (data.matchesMap.values.exists(_.isEmpty)) {}
     data
+  }
+
+  private def cacheDetails(data: GetMatches) = {
+    data.detailsPromise.future.onSuccess { case matchDetails => repository.save(matchDetails, data.region, data.summonerId) }
   }
 
   private def parseResults(data: GetMatches): GetMatches = {
@@ -139,10 +153,4 @@ class MatchHistoryManager extends LazyLogging {
     }
     data
   }
-
-//  private def hasEmptyValues(mergedMatches: Map[Long, Option[MatchDetail]]): Boolean =
-//    mergedMatches.values.exists(_.isEmpty)
-//
-//  private def getValues(mergedMatches: Map[Long, Option[MatchDetail]]): Seq[MatchDetail] =
-//    mergedMatches.values.map(_.get).toSeq
 }

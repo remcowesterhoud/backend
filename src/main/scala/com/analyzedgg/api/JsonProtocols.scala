@@ -1,11 +1,9 @@
 package com.analyzedgg.api
 
-import com.analyzedgg.api.domain._
 import com.analyzedgg.api.domain.riot._
+import com.analyzedgg.api.domain._
 import com.analyzedgg.api.services.riot.ChampionService.ChampionsResponse
 import spray.json._
-
-import scala.concurrent.Future
 
 trait JsonProtocols extends DefaultJsonProtocol {
   //shared

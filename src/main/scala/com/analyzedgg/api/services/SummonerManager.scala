@@ -9,6 +9,7 @@ import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Merge, RunnableGraph, Si
 import com.analyzedgg.api.domain.Summoner
 import com.analyzedgg.api.services.SummonerManager.GetSummoner
 import com.analyzedgg.api.services.couchdb.SummonerRepository
+import com.analyzedgg.api.services.couchdb.SummonerRepository.SummonerNotFound
 import com.analyzedgg.api.services.riot.SummonerService
 import com.typesafe.scalalogging.LazyLogging
 
@@ -22,7 +23,7 @@ object SummonerManager {
   def apply(): SummonerManager = manager
 
   case class GetSummoner(region: String, name: String, var summonerPromise: Promise[Summoner] = Promise[Summoner]()) {
-    def result: Summoner = Await.result(summonerPromise.future, 5.seconds)
+    def result: Future[Summoner] = summonerPromise.future
   }
 
 }
@@ -43,7 +44,7 @@ class SummonerManager extends LazyLogging {
   protected val repository = new SummonerRepository(couchDbCircuitBreaker)
   private val graph = createGraph().run()
 
-  def getSummoner(region: String, name: String): Summoner = {
+  def getSummoner(region: String, name: String): Future[Summoner] = {
     val getSummoner = GetSummoner(region, name)
     graph.offer(getSummoner)
     getSummoner.result
@@ -77,7 +78,7 @@ class SummonerManager extends LazyLogging {
 
       // String the Flow together
       fromCacheFlow ~> cacheResultBroadcast ~> fromRiotFlow ~> riotResultBroadcast ~> cacheSink
-                       cacheResultBroadcast ~> notCachedFilter ~>                     merge
+                       cacheResultBroadcast ~> notCachedFilter                     ~> merge
                                                                riotResultBroadcast ~> merge
 
       // The shape of this Graph is a Flow, meaning it has a single input and a single output.
@@ -88,11 +89,11 @@ class SummonerManager extends LazyLogging {
   }
 
   private def retrieveFromCache(data: GetSummoner): GetSummoner = {
-    val result = repository.getByName(data.region, data.name)
-    if (result != null) {
-      data.summonerPromise.success(result)
+    try {
+      data.summonerPromise.success(repository.getByName(data.region, data.name))
+      data
     }
-    data
+    catch { case SummonerNotFound => data }
   }
 
   private def retrieveFromRiot(data: GetSummoner): GetSummoner = {
