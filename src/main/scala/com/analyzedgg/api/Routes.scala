@@ -12,7 +12,7 @@ import akka.pattern.{CircuitBreaker, ask}
 import akka.util.Timeout
 import com.analyzedgg.api.domain.{MatchDetail, Summoner}
 import com.analyzedgg.api.services.riot.ChampionService.GetChampions
-import com.analyzedgg.api.services.riot.{ChampionService, MatchService, RiotService, SummonerService}
+import com.analyzedgg.api.services.riot._
 import com.analyzedgg.api.services.{MatchHistoryManager, SummonerManager}
 import com.typesafe.config.Config
 

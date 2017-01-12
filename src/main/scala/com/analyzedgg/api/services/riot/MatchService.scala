@@ -4,7 +4,6 @@ import akka.http.scaladsl.model.HttpResponse
 import akka.http.scaladsl.model.StatusCodes.{NotFound, OK}
 import com.analyzedgg.api.domain.riot._
 import com.analyzedgg.api.domain.{MatchDetail, PlayerStats, Team, Teams}
-import com.analyzedgg.api.services.MatchHistoryManager.GetMatches
 import com.analyzedgg.api.services.riot.MatchService.{FailedRetrievingMatchDetails, FailedRetrievingRecentMatches}
 import com.typesafe.scalalogging.LazyLogging
 
@@ -19,18 +18,15 @@ object MatchService {
 }
 
 case class MatchService() extends RiotService with LazyLogging {
-  def getRecentMatchIds(data: GetMatches, amount: Int): GetMatches = {
+  def getRecentMatchIds(region: String, summonerId: Long, amount: Int): Future[Seq[Long]] = {
     val queryParams: Map[String, String] = Map("beginIndex" -> 0.toString, "endIndex" -> amount.toString)
-    riotGetRequest(data.region, matchListBySummonerId + data.summonerId, queryParams).mapTo[HttpResponse].map(httpResponse =>
+    riotGetRequest(region, matchListBySummonerId + summonerId, queryParams).mapTo[HttpResponse].map(httpResponse =>
       httpResponse.status match {
-        case OK =>
-          mapRiotTo(httpResponse.entity, classOf[RiotRecentMatches]).onSuccess {
-            case recentMatchList => data.lastIdsPromise.success(recentMatchList.matches.map(_.matchId))
-          }
-        case NotFound => data.lastIdsPromise.failure(FailedRetrievingRecentMatches)
-        case _ => data.lastIdsPromise.failure(new RuntimeException(s"An unknown error occurred. riot API response:\n$httpResponse"))
-      })
-    data
+        case OK => mapRiotTo(httpResponse.entity, classOf[RiotRecentMatches])
+        case NotFound => throw FailedRetrievingRecentMatches
+        case _ => throw new RuntimeException(s"An unknown error occurred. riot API response:\n$httpResponse")
+      }
+    ).flatMap(futureMatches => futureMatches.map(recentMatchList => recentMatchList.matches.map(_.matchId)))
   }
 
 
