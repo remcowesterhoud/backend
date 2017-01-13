@@ -36,10 +36,11 @@ class MatchHistoryManager extends LazyLogging {
   val decider: Supervision.Decider = { e =>
     logger.warn(e.getMessage)
     Supervision.Resume
+    throw e
   }
   val materializerSettings: ActorMaterializerSettings = ActorMaterializerSettings(system).withSupervisionStrategy(decider)
   implicit val materializer: ActorMaterializer = ActorMaterializer(materializerSettings)(system)
-  private final val matchAmount: Int = 1
+  private final val matchAmount: Int = 10
 
   protected val service = new MatchService()
   protected val repository = new MatchRepository(couchDbCircuitBreaker)
@@ -61,11 +62,12 @@ class MatchHistoryManager extends LazyLogging {
       import GraphDSL.Implicits._
 
       val lastIdsFlow = builder.add(Flow[GetMatches].map(getLastIds).async)
-      val detailsFromRiotFlow = builder.add(Flow[(GetMatches, Future[Seq[Long]])].map(getDetailsFromRiot).async)
+      val detailsFromCacheFlow = builder.add(Flow[(GetMatches, Future[Seq[Long]])].map(getDetailsFromCache).async)
+      val detailsFromRiotFlow = builder.add(Flow[(GetMatches, Future[Map[Long, Option[MatchDetail]]])].map(getDetailsFromRiot).async)
       val detailsBroadcast = builder.add(Broadcast[(GetMatches, Future[Seq[MatchDetail]])](2))
       val cacheDetailsSink = Sink.foreach(cacheDetails).async
 
-      lastIdsFlow ~> detailsFromRiotFlow ~> detailsBroadcast ~> cacheDetailsSink
+      lastIdsFlow ~> detailsFromCacheFlow ~> detailsFromRiotFlow ~> detailsBroadcast ~> cacheDetailsSink
 
       FlowShape(lastIdsFlow.in, detailsBroadcast.out(1))
     })
@@ -81,12 +83,28 @@ class MatchHistoryManager extends LazyLogging {
     idsFuture.map(ids => ids.nonEmpty)
   }
 
-  def getDetailsFromRiot(data: (GetMatches, Future[Seq[Long]])): (GetMatches, Future[Seq[MatchDetail]]) = {
-    (data._1, data._2.flatMap(
-      ids => Future.sequence(ids.map(id =>
+  def getDetailsFromCache(data: (GetMatches, Future[Seq[Long]])): (GetMatches, Future[Map[Long, Option[MatchDetail]]]) = {
+    (data._1, data._2.map(ids => ids.map(id => id -> None).toMap[Long, Option[MatchDetail]])
+      .map(matchesMap => matchesMap ++ repository.getDetailsAllowEmpty(matchesMap.keys.toSeq, data._1.region, data._1.summonerId)
+          .map(detail => detail.matchId -> Some(detail))
+      ))
+  }
+
+  def getDetailsFromRiot(data: (GetMatches, Future[Map[Long, Option[MatchDetail]]])): (GetMatches, Future[Seq[MatchDetail]]) = {
+    //    (data._1, data._2.flatMap(
+    //      ids => Future.sequence(ids.map(id =>
+    //        service.getMatchDetails(data._1.region, data._1.summonerId, id))
+    //        .map(_.map(Success(_)).recover({ case exception => Failure(exception) })))
+    //    ).map(_.collect({ case Success(succeededDetail) => succeededDetail })))
+
+    (data._1, data._2.flatMap(matchesMap =>
+      Future.sequence(matchesMap.filter(_._2.isEmpty).keys.toSeq.map(id =>
         service.getMatchDetails(data._1.region, data._1.summonerId, id))
         .map(_.map(Success(_)).recover({ case exception => Failure(exception) })))
-    ).map(_.collect({ case Success(succeededDetail) => succeededDetail })))
+        .map(_.collect({ case Success(succeededDetail) => succeededDetail }))
+        .map(details => details.map(detail => detail.matchId -> Some(detail)).toMap)
+        .map(riotDetailMap => matchesMap ++ riotDetailMap)
+    ).map(detailsMap => detailsMap.values.toSeq.flatten))
   }
 
   def cacheDetails(data: (GetMatches, Future[Seq[MatchDetail]])): Unit = {
