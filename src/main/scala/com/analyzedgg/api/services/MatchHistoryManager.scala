@@ -39,7 +39,7 @@ class MatchHistoryManager extends LazyLogging {
   }
   val materializerSettings: ActorMaterializerSettings = ActorMaterializerSettings(system).withSupervisionStrategy(decider)
   implicit val materializer: ActorMaterializer = ActorMaterializer(materializerSettings)(system)
-  private final val matchAmount: Int = 1
+  private final val matchAmount: Int = 10
 
   protected val service = new MatchService()
   protected val repository = new MatchRepository(couchDbCircuitBreaker)
