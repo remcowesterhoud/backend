@@ -48,9 +48,9 @@ trait Routes extends JsonProtocols {
   protected implicit def myExceptionHandler = ExceptionHandler {
     case e: RiotService.TooManyRequests => complete(HttpResponse(TooManyRequests))
     case SummonerService.SummonerNotFound => complete(HttpResponse(NotFound))
+    case MatchService.NoRecentMatchesPlayed => complete(HttpResponse(OK, entity = "[]"))
     case MatchService.FailedRetrievingRecentMatches => complete(HttpResponse(ServiceUnavailable))
     //         ChampionService.FailedRetrievingChampions |
-    //         SummonerService.FailedRetrievingSummoner => complete(HttpResponse(ServiceUnavailable))
     case _ => complete(HttpResponse(InternalServerError))
   }
 

@@ -34,9 +34,8 @@ class MatchHistoryManager extends LazyLogging {
   implicit val executionContext: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newCachedThreadPool())
   val system = ActorSystem("match-system")
   val decider: Supervision.Decider = { e =>
-    logger.warn(e.getMessage)
+    logger.warn(e.getCause.toString)
     Supervision.Resume
-    throw e
   }
   val materializerSettings: ActorMaterializerSettings = ActorMaterializerSettings(system).withSupervisionStrategy(decider)
   implicit val materializer: ActorMaterializer = ActorMaterializer(materializerSettings)(system)
@@ -79,10 +78,6 @@ class MatchHistoryManager extends LazyLogging {
     (data, service.getRecentMatchIds(data.region, data.summonerId, matchAmount))
   }
 
-  def foundLastIds(data: GetMatches, idsFuture: Future[Seq[Long]]): Future[Boolean] = {
-    idsFuture.map(ids => ids.nonEmpty)
-  }
-
   def getDetailsFromCache(data: (GetMatches, Future[Seq[Long]])): (GetMatches, Future[Map[Long, Option[MatchDetail]]]) = {
     (data._1, data._2.map(ids => ids.map(id => id -> None).toMap[Long, Option[MatchDetail]])
       .map(matchesMap => matchesMap ++ repository.getDetailsAllowEmpty(matchesMap.keys.toSeq, data._1.region, data._1.summonerId)
@@ -91,12 +86,6 @@ class MatchHistoryManager extends LazyLogging {
   }
 
   def getDetailsFromRiot(data: (GetMatches, Future[Map[Long, Option[MatchDetail]]])): (GetMatches, Future[Seq[MatchDetail]]) = {
-    //    (data._1, data._2.flatMap(
-    //      ids => Future.sequence(ids.map(id =>
-    //        service.getMatchDetails(data._1.region, data._1.summonerId, id))
-    //        .map(_.map(Success(_)).recover({ case exception => Failure(exception) })))
-    //    ).map(_.collect({ case Success(succeededDetail) => succeededDetail })))
-
     (data._1, data._2.flatMap(matchesMap =>
       Future.sequence(matchesMap.filter(_._2.isEmpty).keys.toSeq.map(id =>
         service.getMatchDetails(data._1.region, data._1.summonerId, id))

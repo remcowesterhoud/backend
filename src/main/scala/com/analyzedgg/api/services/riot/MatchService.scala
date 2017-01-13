@@ -4,7 +4,7 @@ import akka.http.scaladsl.model.HttpResponse
 import akka.http.scaladsl.model.StatusCodes.{NotFound, OK}
 import com.analyzedgg.api.domain.riot._
 import com.analyzedgg.api.domain.{MatchDetail, PlayerStats, Team, Teams}
-import com.analyzedgg.api.services.riot.MatchService.{FailedRetrievingMatchDetails, FailedRetrievingRecentMatches}
+import com.analyzedgg.api.services.riot.MatchService.{FailedRetrievingMatchDetails, FailedRetrievingRecentMatches, NoRecentMatchesPlayed}
 import com.typesafe.scalalogging.LazyLogging
 
 import scala.concurrent.Future
@@ -14,6 +14,8 @@ object MatchService {
   case object FailedRetrievingRecentMatches extends Exception
 
   case object FailedRetrievingMatchDetails extends Exception
+
+  case object NoRecentMatchesPlayed extends Exception
 
 }
 
@@ -26,7 +28,9 @@ case class MatchService() extends RiotService with LazyLogging {
         case NotFound => throw FailedRetrievingRecentMatches
         case _ => throw new RuntimeException(s"An unknown error occurred. riot API response:\n$httpResponse")
       }
-    ).flatMap(futureMatches => futureMatches.map(recentMatchList => recentMatchList.matches.map(_.matchId)))
+    ).flatMap(futureMatches => futureMatches.map(recentMatchList =>
+      if (recentMatchList.matches.nonEmpty) {recentMatchList.matches.map(_.matchId) }
+      else throw NoRecentMatchesPlayed))
   }
 
 
