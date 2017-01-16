@@ -68,9 +68,9 @@ class MatchServiceTest extends TestClass with JsonProtocols {
     val response = HttpResponse(status = OK, entity = entity)
     val service = new TestMatchService(response)
     When("the latest match ids are being fetched")
-    val result = service.getRecentMatchIds(getMatchesRequest, 10)
+    val result = service.getRecentMatchIds(getMatchesRequest.region, getMatchesRequest.summonerId, 10)
     Then("the request promise should contain a list of match ids")
-    val actualIds = Await.result(result.lastIdsPromise.future, 3.seconds)
+    val actualIds = Await.result(result, 3.seconds)
     actualIds shouldEqual expectedIds
   }
 
@@ -81,9 +81,9 @@ class MatchServiceTest extends TestClass with JsonProtocols {
     val response = HttpResponse(status = NotFound)
     val service = new TestMatchService(response)
     When("the latest match ids are being fetched")
-    val result = service.getRecentMatchIds(getMatchesRequest, 10)
+    val result = service.getRecentMatchIds(getMatchesRequest.region, getMatchesRequest.summonerId, 10)
     Then("the request promise should contain a list of match ids")
-    val exception = the[FailedRetrievingRecentMatches.type] thrownBy Await.result(result.lastIdsPromise.future, 3.seconds)
+    val exception = the[FailedRetrievingRecentMatches.type] thrownBy Await.result(result, 3.seconds)
     exception shouldEqual FailedRetrievingRecentMatches
   }
 
@@ -94,9 +94,9 @@ class MatchServiceTest extends TestClass with JsonProtocols {
     val response = HttpResponse(status = InternalServerError)
     val service = new TestMatchService(response)
     When("the latest match ids are being fetched")
-    val result = service.getRecentMatchIds(getMatchesRequest, 10)
+    val result = service.getRecentMatchIds(getMatchesRequest.region, getMatchesRequest.summonerId, 10)
     Then("the request promise should contain a list of match ids")
-    val exception = the[RuntimeException] thrownBy Await.result(result.lastIdsPromise.future, 3.seconds)
+    val exception = the[RuntimeException] thrownBy Await.result(result, 3.seconds)
     exception.isInstanceOf[RuntimeException] shouldBe true
     exception.getMessage.contains("An unknown error occurred").shouldBe(true)
   }

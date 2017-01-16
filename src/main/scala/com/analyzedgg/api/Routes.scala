@@ -12,7 +12,7 @@ import akka.pattern.{CircuitBreaker, ask}
 import akka.util.Timeout
 import com.analyzedgg.api.domain.{MatchDetail, Summoner}
 import com.analyzedgg.api.services.riot.ChampionService.GetChampions
-import com.analyzedgg.api.services.riot.{ChampionService, MatchService, RiotService, SummonerService}
+import com.analyzedgg.api.services.riot._
 import com.analyzedgg.api.services.{MatchHistoryManager, SummonerManager}
 import com.typesafe.config.Config
 
@@ -48,9 +48,9 @@ trait Routes extends JsonProtocols {
   protected implicit def myExceptionHandler = ExceptionHandler {
     case e: RiotService.TooManyRequests => complete(HttpResponse(TooManyRequests))
     case SummonerService.SummonerNotFound => complete(HttpResponse(NotFound))
+    case MatchService.NoRecentMatchesPlayed => complete(HttpResponse(OK, entity = "[]"))
     case MatchService.FailedRetrievingRecentMatches => complete(HttpResponse(ServiceUnavailable))
     //         ChampionService.FailedRetrievingChampions |
-    //         SummonerService.FailedRetrievingSummoner => complete(HttpResponse(ServiceUnavailable))
     case _ => complete(HttpResponse(InternalServerError))
   }
 

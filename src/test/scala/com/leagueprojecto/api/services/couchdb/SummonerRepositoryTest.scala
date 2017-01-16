@@ -8,6 +8,7 @@ import com.analyzedgg.api.services.couchdb.SummonerRepository.SummonerNotFound
 import com.ibm.couchdb.{CouchDoc, CouchException, Res}
 import com.leagueprojecto.api.testHelpers.SummonerMockData._
 import com.leagueprojecto.api.testHelpers.TestClass
+import org.http4s.Status.NotFound
 
 import scala.concurrent.duration._
 import scalaz.{-\/, \/-}
@@ -68,7 +69,7 @@ class SummonerRepositoryTest extends TestClass {
   it should "throw a SummonerNotFound exception when getting a non-existing summoner from the database" in {
     Given("the summoner doesn't exist in the database")
     val repo = new SummonerRepository(cbMock)
-    val response = -\/(CouchException(Res.Error("not_found", "deleted")))
+    val response = -\/(CouchException(Res.Error("not_found", "deleted", status = NotFound)))
     cbMock.withSyncCircuitBreaker[-\/[CouchException[Res.Error]]] _ when * returns response
     When("a summoner is retrieved")
     val exception = the[SummonerNotFound.type] thrownBy repo.getByName(testRegion, testSummoner.name)

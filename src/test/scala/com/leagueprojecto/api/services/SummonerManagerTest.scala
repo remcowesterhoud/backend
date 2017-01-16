@@ -47,9 +47,7 @@ class SummonerManagerTest extends TestClass {
     }
     When("a summoner is being retrieved")
     val response = manager.getSummoner(testRegion, testSummoner.name)
-    Then("the cache should be checked for the summoner")
-    manager.repository.getByName _ verify(testRegion, testSummoner.name) once()
-    And("the expected summoner should be returned")
+    Then("the expected summoner should be returned")
     val summoner = Await.result(response, 5.seconds)
     summoner shouldEqual testSummoner
     And("the summoner should be cached")
@@ -57,6 +55,8 @@ class SummonerManagerTest extends TestClass {
     // call was made before this actually happened.
     Thread.sleep(500)
     manager.repository.save _ verify(testSummoner, testRegion) once()
+    And("the cache should have been checked for the summoner")
+    manager.repository.getByName _ verify(testRegion, testSummoner.name) once()
   }
 
   it should "should throw a SummonerNotFound exception if the summoner is invalid" in {

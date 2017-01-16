@@ -1,7 +1,7 @@
 package com.leagueprojecto.api.routes
 
 import com.analyzedgg.api.domain.riot.Player
-import com.analyzedgg.api.services.riot.SummonerService.SummonerNotFound
+import com.analyzedgg.api.services.riot.MatchService.{FailedRetrievingRecentMatches, NoRecentMatchesPlayed}
 
 import scala.concurrent.Future
 
@@ -17,6 +17,7 @@ class MatchHistoryRoute extends RoutesTest {
 
   val validSummonerId = 123456789
   val invalidSummonerId = 987654321
+  val noRecentMatchesId = 546879213
 
   val validPlayerStats = PlayerStats(10, 5, 3, 2)
   val validTeamRed = Team(List(Player(validSummonerId, "Minikoen")))
@@ -32,7 +33,8 @@ class MatchHistoryRoute extends RoutesTest {
     override def getMatchHistory(region: String, summonerId: Long, queueParam: String, championParam: String): Future[Seq[MatchDetail]] = {
       summonerId match {
         case `validSummonerId` => Future(validHistoryList)
-        case `invalidSummonerId` => throw SummonerNotFound
+        case `invalidSummonerId` => throw FailedRetrievingRecentMatches
+        case `noRecentMatchesId` => throw NoRecentMatchesPlayed
         case _ => throw new Exception("Internal server error")
       }
     }
@@ -51,9 +53,9 @@ class MatchHistoryRoute extends RoutesTest {
     }
   }
 
-  it should "return a 404 not found when the summoner id does not exist" in {
+  it should "return a 503 service unavailable when the summoner id is invalid" in {
     Get(s"$endpoint/$invalidSummonerId") ~> routes ~> check {
-      status shouldBe NotFound
+      status shouldBe ServiceUnavailable
       responseAs[String] shouldBe ""
     }
   }
@@ -62,6 +64,13 @@ class MatchHistoryRoute extends RoutesTest {
     Get(s"$endpoint/0") ~> routes ~> check {
       status shouldBe InternalServerError
       responseAs[String] shouldBe ""
+    }
+  }
+
+  it should "return a 200 OK if the summoner has not played any recent matches" in {
+    Get(s"$endpoint/$noRecentMatchesId") ~> routes ~> check {
+      status shouldBe OK
+      responseAs[String] shouldBe "[]"
     }
   }
 
