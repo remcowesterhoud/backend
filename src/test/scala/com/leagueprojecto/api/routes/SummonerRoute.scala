@@ -31,9 +31,9 @@ class SummonerRoute extends RoutesTest {
 
   "Summoner path" should "return a json response with a Summoner in it" in {
     Get(s"$endpoint/existing") ~> routes ~> check {
-
       status shouldBe OK
       contentType shouldBe `application/json`
+
       responseAs[Summoner] shouldBe validSummoner
     }
   }

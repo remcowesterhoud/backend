@@ -52,8 +52,8 @@ class MatchHistoryManager extends LazyLogging {
   }
 
   private def createGraph(bufferSize: Int = 100): RunnableGraph[SourceQueueWithComplete[GetMatches]] = {
-    // Sink wich will set the match details to the result variable of the request
-    val returnSink = Sink.foreach(setResult)
+    // Sink which will set the match details to the result variable of the request
+    val resultSink = Sink.foreach(setResult)
     // Start of the Stream, GetMatches requests can dynamically be passed to this Source
     val source = Source.queue[GetMatches](bufferSize, OverflowStrategy.backpressure)
 
@@ -67,7 +67,7 @@ class MatchHistoryManager extends LazyLogging {
       val detailsFromCacheFlow = builder.add(Flow[(GetMatches, Future[Seq[Long]])].map(getDetailsFromCache).async)
       // Flow that uses the match ids to try and get the details from the riot api
       val detailsFromRiotFlow = builder.add(Flow[(GetMatches, Future[Map[Long, Option[MatchDetail]]])].map(getDetailsFromRiot).async)
-      // Broadcast that sends the match details to the cacheSink and the returnSink
+      // Broadcast that sends the match details to the cacheSink and the resultSink
       val detailsBroadcast = builder.add(Broadcast[(GetMatches, Future[Seq[MatchDetail]])](2))
       // Sink that caches the details in the database
       val cacheDetailsSink = Sink.foreach(cacheDetails).async
@@ -77,7 +77,7 @@ class MatchHistoryManager extends LazyLogging {
 
       FlowShape(lastIdsFlow.in, detailsBroadcast.out(1))
     })
-    source.via(lastIdsFlow).to(returnSink)
+    source.via(lastIdsFlow).to(resultSink)
   }
 
   def getLastIds(data: GetMatches): (GetMatches, Future[Seq[Long]]) = {
