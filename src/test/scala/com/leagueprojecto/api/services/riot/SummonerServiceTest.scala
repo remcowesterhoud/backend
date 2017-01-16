@@ -42,9 +42,9 @@ class SummonerServiceTest extends TestClass with JsonProtocols {
     val response = HttpResponse(status = OK, entity = mockSummoner)
     val service = new TestSummonerService(response)
     When("a valid Summoner is requested")
-    val result = service.getByName(getSummonerRequest)
+    val result = service.getByName(getSummonerRequest.region, getSummonerRequest.name)
     Then("the request promise should contain a valid summoner")
-    val summoner = Await.result(result.summonerPromise.future, 3.seconds)
+    val summoner = Await.result(result, 3.seconds)
     summoner.id shouldBe 52477463
     summoner.name shouldBe "Wagglez"
     summoner.profileIconId shouldBe 785
@@ -62,9 +62,9 @@ class SummonerServiceTest extends TestClass with JsonProtocols {
     val response = HttpResponse(status = NotFound)
     val service = new TestSummonerService(response)
     When("a non existing Summoner is requested")
-    val result = service.getByName(getSummonerRequest)
+    val result = service.getByName(getSummonerRequest.region, getSummonerRequest.name)
     Then("the request promise should contain a SummonerNotFound exception")
-    val exception = the[SummonerNotFound.type] thrownBy Await.result(result.summonerPromise.future, 3.seconds)
+    val exception = the[SummonerNotFound.type] thrownBy Await.result(result, 3.seconds)
     exception shouldEqual SummonerNotFound
   }
 
@@ -78,9 +78,9 @@ class SummonerServiceTest extends TestClass with JsonProtocols {
     val response = HttpResponse(status = InternalServerError)
     val service = new TestSummonerService(response)
     When("the Riot api cannot be reached")
-    val result = service.getByName(getSummonerRequest)
+    val result = service.getByName(getSummonerRequest.region, getSummonerRequest.name)
     Then("the request promise should contain a RuntimeException")
-    val exception = the[RuntimeException] thrownBy Await.result(result.summonerPromise.future, 3.seconds)
+    val exception = the[RuntimeException] thrownBy Await.result(result, 3.seconds)
     exception.isInstanceOf[RuntimeException] shouldBe true
     exception.getMessage.contains("An unknown error occurred").shouldBe(true)
   }

@@ -7,7 +7,7 @@ import com.analyzedgg.api.services.riot.SummonerService
 import com.leagueprojecto.api.testHelpers.SummonerMockData._
 import com.leagueprojecto.api.testHelpers.TestClass
 
-import scala.concurrent.Await
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 
 class SummonerManagerTest extends TestClass {
@@ -31,7 +31,7 @@ class SummonerManagerTest extends TestClass {
     val summoner = Await.result(response, 5.seconds)
     summoner shouldEqual testSummoner
     And("no call to the Riot api should be made")
-    manager.service.getByName _ verify * never()
+    manager.service.getByName _ verify (testRegion, testSummoner.name) never()
   }
 
   it should "retrieve a summoner from riot and cache it if it doesn't exist" in {
@@ -41,10 +41,7 @@ class SummonerManagerTest extends TestClass {
     Given("the summoner doesn't exist in the cache")
     manager.repository.getByName _ when(testRegion, testSummoner.name) throws SummonerRepository.SummonerNotFound
     And("the requests summoner is a valid summoner")
-    manager.service.getByName _ when * onCall { x: GetSummoner =>
-      x.summonerPromise.success(testSummoner)
-      x
-    }
+    manager.service.getByName _ when (testRegion, testSummoner.name) returns Future(testSummoner)
     When("a summoner is being retrieved")
     val response = manager.getSummoner(testRegion, testSummoner.name)
     Then("the expected summoner should be returned")
@@ -65,10 +62,7 @@ class SummonerManagerTest extends TestClass {
 
     Given("the requested summoner is invalid")
     manager.repository.getByName _ when(testRegion, testSummoner.name) throws SummonerRepository.SummonerNotFound
-    manager.service.getByName _ when * onCall { x: GetSummoner =>
-      x.summonerPromise.failure(SummonerService.SummonerNotFound)
-      x
-    }
+    manager.service.getByName _ when (testRegion, testSummoner.name) throws SummonerService.SummonerNotFound
     When("a summoner is being retrieved")
     val response = manager.getSummoner(testRegion, testSummoner.name)
     val exception = the[SummonerService.SummonerNotFound.type] thrownBy Await.result(response, 5.seconds)
@@ -83,10 +77,7 @@ class SummonerManagerTest extends TestClass {
     val manager = new TestSummonerManager()
 
     Given("the riot api is offline")
-    manager.service.getByName _ when * onCall { x: GetSummoner =>
-      x.summonerPromise.failure(new RuntimeException)
-      x
-    }
+    manager.service.getByName _ when (testRegion, testSummoner.name) throws new RuntimeException
     And("the summoner does not exist in the cache")
     manager.repository.getByName _ when(testRegion, testSummoner.name) throws SummonerRepository.SummonerNotFound
     When("a summoner is being retrieved")
